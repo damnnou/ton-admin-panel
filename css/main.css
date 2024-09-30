@@ -147,9 +147,9 @@ button:disabled, .btn:disabled {
 }
 
 #header_logo {
-    width: 32px;
-    height: 32px;
-    background-image: url(../assets/logo.svg);
+    width: 128px;
+    height: 128px;
+    background-image: url(../assets/logo.png);
     background-repeat: no-repeat;
     background-position: center;
     background-size: contain;
