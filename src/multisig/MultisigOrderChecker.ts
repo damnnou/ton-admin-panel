@@ -13,6 +13,7 @@ import {MultisigInfo} from "./MultisigChecker";
 import {MyNetworkProvider, sendToIndex} from "../utils/MyNetworkProvider";
 import {intToLockType, JettonMinter, lockTypeToDescription} from "../jetton/JettonMinter";
 import {CommonMessageInfoRelaxedInternal} from "@ton/core/src/types/CommonMessageInfoRelaxed";
+import { ContractOpcodes } from "../amm/opCodes";
 
 export interface MultisigOrderInfo {
     address: AddressInfo;
@@ -212,6 +213,49 @@ export const checkMultisigOrder = async (
             return `Force burn ${parsed.action.jettonAmount} jettons (in units) from user ${userAddress}; ${fromNano(parsed.tonAmount)} TON for gas`;
         } catch (e) {
         }
+
+        try {
+            const p = cell.beginParse()
+            let opcode = p.loadUint(32)
+            if (opcode != ContractOpcodes.ROUTERV3_CREATE_POOL) throw new Error("Unknown opcode")
+            
+            let query_id = p.loadUint(64)
+            let jetton0Wallet = p.loadAddress()
+            let jetton1Wallet = p.loadAddress()
+            let tickSpacing = p.loadInt(24)
+            let priceX96 = p.loadUintBig(160)
+            p.loadRef()
+            p.loadRef()
+            let p1 = p.loadRef().beginParse()
+
+            let jetton0Minter = p1.loadAddress()
+            let jetton1Minter = p1.loadAddress()
+            let controller    = p1.loadAddress()
+
+            const jetton0MinterS = await formatAddressAndUrl(jetton0Minter, isTestnet)
+            const jetton1MinterS = await formatAddressAndUrl(jetton1Minter, isTestnet)
+
+            const jetton0WalletS = await formatAddressAndUrl(jetton0Wallet, isTestnet)
+            const jetton1WalletS = await formatAddressAndUrl(jetton1Wallet, isTestnet)
+
+
+            const controllerS = await formatAddressAndUrl(controller, isTestnet)
+
+            return `Create New Pool For<br/>` + 
+            `  Minter1: ${jetton0MinterS}<br/>` + 
+            `  Wallet1: ${jetton0WalletS}<br/>` + 
+
+            `  Minter2: ${jetton1MinterS}<br/>` + 
+            `  Wallet2: ${jetton1WalletS}<br/>` + 
+
+            `  Tick Spacing : ${tickSpacing}<br/>` +
+            `  Tick Spacing : ${priceX96}<br/>` +
+
+            `  Controller :  ${controllerS}<br/>`;
+        } catch (e) {
+        }
+
+        
 
         throw new Error('Unsupported action')
 
