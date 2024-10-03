@@ -60,9 +60,10 @@ export class ContractOpcodes {
     static POSITIONNFTV3_EDIT_CONTENT : number = 0x1a0b9d51 // 436968785
     static POSITIONNFTV3_TRANSFER_EDITORSHIP : number = 0x1c04412a // 470040874
     static POSITIONNFTV3_EDITORSHIP_ASSIGNED : number = 0x511a4463 // 1360675939
-    static ROUTERV3_PAY_TO           : number = 0xf93bb43f // 4181439551
+    static ROUTERV3_PAY_TO           : number = 0xa1daa96d // 2715461997
     static ROUTERV3_TRANSFER_NOTIFICATION : number = 0xf189f909 // 4052351241
     static ROUTERV3_CREATE_POOL      : number = 0x2e3034ef // 774911215
+    static ROUTERV3_RESET_GAS        : number = 0x42a0fb43 // 1117846339
     static SINKV3_SET                : number = 0xe61425dc // 3860080092
     static SINKV3_ADD                : number = 0xfd1a73e7 // 4246369255
     static SINKV3_TEST_GAS           : number = 0x7337ed7 // 120815319
@@ -94,7 +95,7 @@ export const OpcodesLookup = {
     0x2fcb26a2 : "NFT_GET_STATIC_DATA,POSITIONNFTV3_GET_STATIC_DATA",
     0x3205adbd : "POOLV3_UNLOCK",
     0x3ebe5431 : "ACCOUNTV3_ADD_LIQUIDITY",
-    0x42a0fb43 : "ACCOUNTV3_RESET_GAS",
+    0x42a0fb43 : "ACCOUNTV3_RESET_GAS,ROUTERV3_RESET_GAS",
     0x441c39ed : "POOLV3_INIT",
     0x4468de77 : "POOLV3_FUND_ACCOUNT",
     0x46ca335a : "POSITIONNFTV3_POSITION_BURN",
@@ -114,6 +115,7 @@ export const OpcodesLookup = {
     0x81702ef8 : "POOLV3_MINT",
     0x89446a42 : "ACCOUNTV3_CB_REFUND_ME",
     0x8b771735 : "NFT_REPORT_STATIC_DATA,POSITIONNFTV3_REPORT_STATIC_DATA",
+    0xa1daa96d : "ROUTERV3_PAY_TO",
     0xa7fb58f8 : "POOLV3_SWAP",
     0xa8cb00ad : "NFT_REPORT_ROYALTY_PARAMS,POSITIONNFTV3_REPORT_ROYALTY_PARAMS",
     0xae25d79e : "TONPROXY_MINTER_TON_REFUND",
@@ -128,7 +130,6 @@ export const OpcodesLookup = {
     0xe61425dc : "SINKV3_SET",
     0xe639646c : "POOLV3_BURN_M",
     0xf189f909 : "ROUTERV3_TRANSFER_NOTIFICATION",
-    0xf93bb43f : "ROUTERV3_PAY_TO",
     0xfd1a73e7 : "SINKV3_ADD",
     0xfffffeee : "SINKV3_DUMMY",
 }
@@ -185,6 +186,7 @@ export class ContractErrors {
     static ROUTERV3_INVALID_AMOUNT         : number = 110 // 0x6e
     static ROUTERV3_INVALID_CALLER         : number = 111 // 0x6f
     static ROUTERV3_POOL_ILLEGAL_PARAMS    : number = 112 // 0x70
+    static ROUTERV3_INSUFFICIENT_GAS       : number = 113 // 0x71
 }
 
 export const ErrorsLookup = {    
@@ -215,6 +217,7 @@ export const ErrorsLookup = {
     110 : "ROUTERV3_INVALID_AMOUNT",
     111 : "ROUTERV3_INVALID_CALLER",
     112 : "ROUTERV3_POOL_ILLEGAL_PARAMS",
+    113 : "ROUTERV3_INSUFFICIENT_GAS",
     200 : "POOLV3_RESULT_SWAP_OK",
     201 : "POOLV3_RESULT_BURN_OK",
     202 : "POOLV3_RESULT_MINT_OK",

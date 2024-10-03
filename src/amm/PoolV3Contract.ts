@@ -1,8 +1,13 @@
 import { Address, beginCell, Cell,  Dictionary, DictionaryValue, Contract, contractAddress,  ContractProvider, Sender, SendMode, TupleReader } from "@ton/core";
 import { ContractOpcodes, OpcodesLookup } from "./opCodes";
-import { ContractMessageMeta, DummyCell } from "./DummyCell";
-import { nftContentPackedDefault, nftItemContentPackedDefault } from "./nftContent"
+import { packJettonOnchainMetadata} from "./common/jettonContent";
+import { ContractMessageMeta, DummyCell} from "./DummyCell";
   
+
+
+export const BLACK_HOLE_ADDRESS  : Address = Address.parse("EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c")
+export const BLACK_HOLE_ADDRESS1 : Address = Address.parse("EQAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEOSs")
+export const BLACK_HOLE_ADDRESS2 : Address = Address.parse("EQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAc3j")
 
 /** Inital data structures and settings **/
 export type PoolV3ContractConfig = {    
@@ -57,6 +62,52 @@ const DictionaryTickInfo: DictionaryValue<TickInfoWrapper> = {
     }
 }
 
+
+export function embedJettonData (content :Cell, jetton0Name : string, decimals0: number,  jetton1Name : string, decimals1: number): Cell {
+    let p = content.beginParse()
+
+    //console.log("embedJettonData l0 ", Buffer.from(jetton0Name).length )
+    //console.log("embedJettonData l1 ", Buffer.from(jetton1Name).length )
+
+    const result : Cell = beginCell()
+        .storeInt (p.loadUint(8), 8)
+        .storeMaybeRef (p.loadRef())
+        .storeUint(decimals0,6)
+        .storeUint(Buffer.from(jetton0Name).length, 8)
+        .storeBuffer(Buffer.from(jetton0Name))
+        .storeUint(decimals1,6)
+        .storeUint(Buffer.from(jetton1Name).length, 8)
+        .storeBuffer(Buffer.from(jetton1Name))
+    .endCell();
+    return result;
+}
+
+
+export let nftContentToPack : { [s: string]: string | undefined } = {  
+    name   : "AMM Pool Minter", 
+    description : "AMM Pool LP Minter", 
+    cover_image : "https://tonco.io/static/tonco-cover.jpeg", 
+    image: "https://tonco.io/static/tonco-astro.png" 
+}
+
+
+//export const nftContentPackedDefault: Cell =  embedJettonData(packJettonOnchainMetadata(nftContentToPack), "jetton0", 10, "jetton1", 11)
+export const nftContentPackedDefault: Cell =  packJettonOnchainMetadata(nftContentToPack)
+
+
+export let nftItemContentToPack : { [s: string]: string | undefined } = {  
+    name   : "AMM Pool Position", 
+    description : "LP Position", 
+    image: "https://tonco.io/static/tonco-astro.png",
+    //content_url : "https://tonco.io/static/tonco-astro.png", 
+    //content_type : "image/png"
+}
+
+
+export const nftItemContentPackedDefault: Cell =  packJettonOnchainMetadata(nftItemContentToPack)
+
+let nftItemContent1ToPack = "https://pimenovalexander.github.io/resources/icons/metadata.json"
+//const nftItemContentPacked: Cell =  packOffchainMetadata (nftItemContent1ToPack)
 
 
 
@@ -145,8 +196,7 @@ export class PoolV3Contract implements Contract {
         return result2
     }
 
-
-  
+ 
     static createFromConfig(
         config: PoolV3ContractConfig,
         code: Cell,
@@ -196,9 +246,14 @@ export class PoolV3Contract implements Contract {
             .storeAddress(opts.admin)                 // null is an invalid Address, but valid slice
             .storeUint(opts.controller ? 1 : 0, 1)
             .storeAddress(opts.controller)
+
+            .storeUint(1, 1)            
             .storeUint(tickSpacing , 24)
+            .storeUint(1, 1)            
             .storeUint(sqrtPriceX96, 160)
+            .storeUint(1, 1)
             .storeUint(opts.activate_pool ? 1 : 0, 1)
+
             .storeRef(opts.nftContentPacked     ?? nftContentPackedDefault)
             .storeRef(opts.nftItemContentPacked ?? nftItemContentPackedDefault)
             .storeMaybeRef(minterCell)
@@ -210,6 +265,57 @@ export class PoolV3Contract implements Contract {
             body: body,
         });
     }
+
+    async sendReinit(provider: ContractProvider, via: Sender, value: bigint,           
+        opts: {
+            activate_pool? : boolean, 
+            tickSpacing?   : number,
+            sqrtPriceX96?  : bigint,
+    
+
+            jetton0Minter? : Address,
+            jetton1Minter? : Address,
+            admin? : Address,
+            controller?: Address,
+
+            nftContentPacked? : Cell,
+            nftItemContentPacked? : Cell
+        }
+    
+    ) {
+        let minterCell = null;
+        if (opts.jetton0Minter && opts.jetton0Minter) {
+            minterCell = beginCell()
+                .storeAddress(opts.jetton0Minter)
+                .storeAddress(opts.jetton1Minter)
+           .endCell()
+        }
+
+        
+        let body : Cell = beginCell()
+            .storeUint(ContractOpcodes.POOLV3_INIT, 32) // OP code
+            .storeUint(0, 64) // query_id
+            .storeUint(opts.admin ? 1 : 0, 1)
+            .storeAddress(opts.admin)                 // null is an invalid Address, but valid slice
+            .storeUint(opts.controller == undefined ? 0 : 1, 1)
+            .storeAddress(opts.controller)
+
+            .storeUint(opts.tickSpacing == undefined ? 0 : 1, 1)
+            .storeUint(opts.tickSpacing ?? 0, 24)
+            .storeUint(opts.sqrtPriceX96 == undefined ? 0 : 1, 1)            
+            .storeUint(opts.sqrtPriceX96 ?? 0, 160)
+            .storeUint(opts.activate_pool == undefined ? 0 : 1, 1)
+            .storeUint(opts.activate_pool ? 1 : 0, 1)
+
+            .storeRef(opts.nftContentPacked     ?? beginCell().endCell())
+            .storeRef(opts.nftItemContentPacked ?? beginCell().endCell())
+            .storeMaybeRef(minterCell)
+        .endCell();
+    
+        await provider.internal(via, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: body })
+    }
+
+
 
     async sendSetFees(
         provider: ContractProvider, 
@@ -226,9 +332,9 @@ export class PoolV3Contract implements Contract {
             .storeUint(protocolFee, 16)
             .storeUint(lpFee      , 16)        
             .storeUint(currentFee , 16)                
-        .endCell();
+        .endCell()
 
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
+        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body })
     }
 
     async sendLockPool(provider: ContractProvider, sender: Sender, value: bigint) 
@@ -236,8 +342,8 @@ export class PoolV3Contract implements Contract {
         const msg_body = beginCell()
             .storeUint(ContractOpcodes.POOLV3_LOCK, 32) // OP code
             .storeUint(0, 64)                           // query_id  
-        .endCell();
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
+        .endCell()
+        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body })
     }
 
     async sendUnlockPool(provider: ContractProvider, sender: Sender, value: bigint) 
@@ -245,8 +351,8 @@ export class PoolV3Contract implements Contract {
         const msg_body = beginCell()
             .storeUint(ContractOpcodes.POOLV3_UNLOCK, 32) // OP code
             .storeUint(0, 64)                             // query_id  
-        .endCell();
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
+        .endCell()
+        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body })
     }
 
     async sendCollectProtocol(
@@ -257,9 +363,9 @@ export class PoolV3Contract implements Contract {
         const msg_body = beginCell()
             .storeUint(ContractOpcodes.POOLV3_COLLECT_PROTOCOL, 32) // OP code
             .storeUint(0, 64) // query_id          
-        .endCell();
+        .endCell()
 
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
+        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body })
     }
      
 
@@ -285,101 +391,6 @@ export class PoolV3Contract implements Contract {
         })
     }
 
-
-
-    /** 
-     *  Debug methods move then to separate class 
-     * 
-     **/
-
-    async sendMintDebug(
-        provider: ContractProvider, 
-        sender: Sender, 
-        value: bigint, 
-
-        recipient: Address,
-        tickLower: number,
-        tickUpper: number,
-        liquidity: bigint
-    ) {
-        const msg_body = beginCell()
-            .storeUint(ContractOpcodes.POOLV3_MINT_M, 32) // OP code
-            .storeAddress(recipient)
-            .storeInt(tickLower, 24)
-            .storeInt(tickUpper, 24)
-            .storeInt(liquidity, 128)        
-        .endCell();
-
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
-    }
-
-    async sendFillTickDebug(
-        provider: ContractProvider, 
-        sender: Sender, 
-        value: bigint,       
-        tickBegin : number,
-        tickEnd   : number,
-        
-        liquidityTotal       : bigint,
-        liquidityDelta       : bigint,
-        outerFeeGrowth0Token : bigint,
-        outerFeeGrowth1Token : bigint
-    ) {
-        const msg_body = beginCell()
-            .storeUint(ContractOpcodes.POOLV3_FILL_TICK_M, 32) // OP code           
-            .storeInt(tickBegin, 24)
-            .storeInt(tickEnd, 24)            
-            .storeUint(liquidityTotal, 256)
-            .storeInt (liquidityDelta, 128)
-            .storeUint(outerFeeGrowth0Token, 256)
-            .storeUint(outerFeeGrowth1Token, 256)
-        .endCell();
-
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
-    }
-
-    async sendBurnDebug(
-        provider: ContractProvider, 
-        sender: Sender, 
-        value: bigint, 
-
-        recipient: Address,
-        tickLower: number,
-        tickUpper: number,
-        liquidity: bigint
-    ) {
-        const msg_body = beginCell()
-            .storeUint(ContractOpcodes.POOLV3_BURN_M, 32) // OP code
-            .storeAddress(recipient)        
-            .storeInt(tickLower, 24)
-            .storeInt(tickUpper, 24)
-            .storeInt(liquidity, 128)
-            
-        .endCell();
-
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
-    }
-
-    async sendSwapDebug(
-        provider: ContractProvider, 
-        sender: Sender, 
-        value: bigint, 
-
-        recipient: Address,
-        zeroForOne: boolean,
-        amountSpecified: bigint,
-        sqrtPriceLimitX96: bigint
-    ) {
-        const msg_body = beginCell()
-            .storeUint(ContractOpcodes.POOLV3_SWAP_M, 32) // OP code
-            .storeAddress(recipient)        
-            .storeUint(zeroForOne ? 1 : 0, 1)
-            .storeUint(amountSpecified, 256)
-            .storeUint(sqrtPriceLimitX96, 160)            
-        .endCell();
-
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
-    }
    
     /** Getters **/
    
@@ -402,8 +413,9 @@ export class PoolV3Contract implements Contract {
       const { stack } = await provider.get("getPoolStateAndConfiguration", []);
    
       return {
-          router_address : stack.readAddress(),
-          admin_address  : stack.readAddress(),
+          router_address     : stack.readAddress(),
+          admin_address      : stack.readAddress(),
+          controller_address : stack.readAddress(),
 
           jetton0_wallet : stack.readAddress(),
           jetton1_wallet : stack.readAddress(),
@@ -435,8 +447,8 @@ export class PoolV3Contract implements Contract {
           nftv3items_active : stack.readBigNumber(),
           ticks_occupied    :  stack.readNumber(),
 
-          seqno    :  stack.readBigNumber()
-
+          seqno    :  stack.readBigNumber(),
+  
       }
     }
 
@@ -608,39 +620,6 @@ export class PoolV3Contract implements Contract {
     }
 
     
-
-    /* Tick math related getters */
-    async getSqrtRatioAtTick(provider: ContractProvider, tick: number) {
-        const { stack } = await provider.get("getSqrtRatioAtTick", 
-        [
-            {type: 'int', value: BigInt(tick)}
-        ]);
-        return stack.readBigNumber();
-    }
-
-    async getTickAtSqrtRatio(provider: ContractProvider, sqrtPriceX96: bigint) {
-        const { stack } = await provider.get("getTickAtSqrtRatio", 
-        [
-            {type: 'int', value: BigInt(sqrtPriceX96)}
-        ]);
-        return stack.readNumber();
-    }
-
-    async getMaxLiquidityPerTick(provider: ContractProvider) {
-        const { stack } = await provider.get("getMaxLiquidityPerTick", [])
-        return stack.readBigNumber()
-    }
-
-
-    async getTickSpacingToMaxLiquidityPerTick(provider: ContractProvider, tickSpacing: number) {
-        const { stack } = await provider.get("getTickSpacingToMaxLiquidityPerTick", 
-        [
-            {type: 'int', value: BigInt(tickSpacing)}
-        ])
-        return stack.readBigNumber()
-    }
-
-
     async getFeeGrowthInside(provider: ContractProvider, 
         tickLower : number,
         tickUpper : number,
@@ -681,6 +660,16 @@ export class PoolV3Contract implements Contract {
         return res.stack.readAddress()
     }
 
+    async getNFTCollectionContent(provider: ContractProvider)
+    {
+        const res = await provider.get('get_collection_data', [])
+        return { 
+            nftv3item_counter: res.stack.readBigNumber(), 
+            nftv3_content    : res.stack.readCell(), 
+            router_address   : res.stack.readAddress() 
+        }
+    }
+  
     async getNFTContent(provider: ContractProvider,  index: bigint, nftItemContent : Cell): Promise<Cell>
     {
         const res = await provider.get('get_nft_content', 
@@ -699,134 +688,11 @@ export class PoolV3Contract implements Contract {
         const { stack } = await provider.get("getChildContracts", []);
         return {
             accountCode     : stack.readCell(),
-            positionNFTCode : stack.readCell()
+            positionNFTCode : stack.readCell(),
+            nftCollectionContent : stack.readCell(),
+            nftItemContent  : stack.readCell(),            
         };
     }
-
-
-    
-    /* Math for testing only */  
-    async getMostSignificantBit(provider: ContractProvider, x: bigint) {
-        const { stack } = await provider.get("getMostSignificantBit", 
-        [
-            {type: 'int', value: BigInt(x)}
-        ]);
-        return stack.readNumber();
-    }
-
-
-    async getAmount0Delta(provider: ContractProvider, sqrtRatioAX96: bigint, sqrtRatioBX96 : bigint , liquidity: bigint) {
-        const { stack } = await provider.get("getAmount0Delta", 
-        [
-            {type: 'int', value: BigInt(sqrtRatioAX96)},
-            {type: 'int', value: BigInt(sqrtRatioBX96)},
-            {type: 'int', value: BigInt(liquidity)}
-
-        ]);
-        return stack.readBigNumber();
-    }
-
-    async getAmount1Delta(provider: ContractProvider, sqrtRatioAX96: bigint, sqrtRatioBX96 : bigint , liquidity: bigint) {
-      const { stack } = await provider.get("getAmount1Delta", 
-        [
-          {type: 'int', value: BigInt(sqrtRatioAX96)},
-          {type: 'int', value: BigInt(sqrtRatioBX96)},
-          {type: 'int', value: BigInt(liquidity)}
-
-        ]);
-      return stack.readBigNumber();
-    }
-
-    /* Rounding versions */
-    async getAmount0DeltaR(provider: ContractProvider, sqrtRatioAX96: bigint, sqrtRatioBX96 : bigint , liquidity: bigint, roundUp: boolean) 
-    {
-      const { stack } = await provider.get("getAmount0DeltaR", 
-        [
-            {type: 'int', value: BigInt(sqrtRatioAX96)},
-            {type: 'int', value: BigInt(sqrtRatioBX96)},
-            {type: 'int', value: BigInt(liquidity)},
-            {type: 'int', value: BigInt(roundUp ? 1: 0)}
-
-        ]);
-      return stack.readBigNumber();
-    }
-
-    async getAmount1DeltaR(provider: ContractProvider, sqrtRatioAX96: bigint, sqrtRatioBX96 : bigint , liquidity: bigint, roundUp: boolean) 
-    {
-        const { stack } = await provider.get("getAmount1DeltaR", 
-        [
-            {type: 'int', value: BigInt(sqrtRatioAX96)},
-            {type: 'int', value: BigInt(sqrtRatioBX96)},
-            {type: 'int', value: BigInt(liquidity)},
-            {type: 'int', value: BigInt(roundUp ? 1: 0)}
-        ]);
-        return stack.readBigNumber();
-    }
-
-    /* Sqrt Math related computation */
-    async getNextSqrtPriceFromAmount0RoundingUp(provider: ContractProvider, sqrtPX96: bigint, liquidity : bigint , amount: bigint, add: boolean) 
-    {
-        const { stack } = await provider.get("getNextSqrtPriceFromAmount0RoundingUp", 
-        [
-            {type: 'int', value: BigInt(sqrtPX96)},
-            {type: 'int', value: BigInt(liquidity)},
-            {type: 'int', value: BigInt(amount)},
-            {type: 'int', value: BigInt(add ? 1: 0)}
-        ]);
-        return stack.readBigNumber();
-    }
-
-    async getNextSqrtPriceFromAmount1RoundingDown(provider: ContractProvider, sqrtPX96: bigint, liquidity : bigint , amount: bigint, add: boolean) 
-    {
-        const { stack } = await provider.get("getNextSqrtPriceFromAmount1RoundingDown", 
-        [
-            {type: 'int', value: BigInt(sqrtPX96)},
-            {type: 'int', value: BigInt(liquidity)},
-            {type: 'int', value: BigInt(amount)},
-            {type: 'int', value: BigInt(add ? 1: 0)}
-        ]);
-        return stack.readBigNumber();
-    }
-
-    async getNextSqrtPriceFromInput(provider: ContractProvider, sqrtPX96: bigint, liquidity : bigint , amountIn: bigint, zeroForOne: boolean) 
-    {
-        const { stack } = await provider.get("getNextSqrtPriceFromInput", 
-        [
-            {type: 'int', value: BigInt(sqrtPX96)},
-            {type: 'int', value: BigInt(liquidity)},
-            {type: 'int', value: BigInt(amountIn)},
-            {type: 'int', value: BigInt(zeroForOne ? 1: 0)}
-        ]);
-        return stack.readBigNumber();
-    }
-    
-    async getNextSqrtPriceFromOutput(provider: ContractProvider, sqrtPX96: bigint, liquidity : bigint , amountOut: bigint, zeroForOne: boolean) 
-    {
-        const { stack } = await provider.get("getNextSqrtPriceFromOutput", 
-        [
-            {type: 'int', value: BigInt(sqrtPX96)},
-            {type: 'int', value: BigInt(liquidity)},
-            {type: 'int', value: BigInt(amountOut)},
-            {type: 'int', value: BigInt(zeroForOne ? 1: 0)}
-        ]);
-        return stack.readBigNumber();
-    }
-   
-    /* Main swap math */
-    async getComputeSwapStep(provider: ContractProvider, sqrtRatioCurrentX96: bigint, sqrtRatioTargetX96 : bigint , liquidity: bigint, amountRemaining: bigint, feePips: bigint) 
-    {
-        const { stack } = await provider.get("computeSwapStep", 
-        [
-            {type: 'int', value: BigInt(sqrtRatioCurrentX96)},
-            {type: 'int', value: BigInt(sqrtRatioTargetX96)},
-            {type: 'int', value: BigInt(liquidity)},
-            {type: 'int', value: BigInt(amountRemaining)},
-            {type: 'int', value: BigInt(feePips)}
-          
-        ]);
-        return {sqrtRatioNextX96:stack.readBigNumber(), amountIn: stack.readBigNumber(), amountOut: stack.readBigNumber(), feeAmount: stack.readBigNumber()  };
-    }
-
 
 
     /** 
@@ -860,25 +726,28 @@ export class PoolV3Contract implements Contract {
             let has_admin = (p.preloadUint(1) == 1)            
             result.push({ name:`has_admin`,       value: `${p.loadInt (1)  }`, type:`UInt(1) `,      comment: "Flag that shows if this message have a new admin address"}) 
             if (has_admin) {
-                result.push({ name:`admin_addr`,      value: `${p.loadAddress()}`, type:`Address()`, comment: "New address of the admin"})
+                result.push({ name:`admin_addr`,      value: `${p.loadAddress()}`, type:`Address()`, comment: "New address of the admin. If has_admin is false could be 00b"})
             }
 
             let has_controller = (p.preloadUint(1) == 1)
             result.push({ name:`has_controller`,  value: `${p.loadInt (1)  }`, type:`UInt(1) `,      comment: "Flag that shows if this message have a new controller address"}) 
             if (has_controller) {
-                result.push({ name:`controller_addr`, value: `${p.loadAddress()}`, type:`Address()`, comment: "Address that is allowed to change the fee. Can always be updated by admin"})
+                result.push({ name:`controller_addr`, value: `${p.loadAddress()}`, type:`Address()`, comment: "Address that is allowed to change the fee. Can always be updated by admin. If has_controller is false could be 00b"})
             }
 
+            result.push({ name:`set_spacing`,     value: `${p.loadInt (1)  }`, type:`UInt(1) `  ,            comment: "Flag that shows if tick_spacing should be set to the pool or ignored"}) 
             result.push({ name:`tick_spacing`,    value: `${p.loadInt(24)  }`, type:`Int(24)   `,            comment: "Tick spacing to be used in the pool"}) 
+            result.push({ name:`set_price`,       value: `${p.loadInt (1)  }`, type:`UInt(1) `  ,            comment: "Flag that shows if initial_priceX96 should be set to the pool or ignored"}) 
             result.push({ name:`initial_priceX96`,value: `${p.loadUintBig(160)}`, type:`Uint(160),PriceX96`, comment: "Initial price for the pool"}) 
-            result.push({ name:`pool_active`,     value: `${p.loadInt(1)   }`, type:`UInt(1) `  ,            comment: "Flag is we should start the pool as unlocked"}) 
+            result.push({ name:`set_active` ,     value: `${p.loadInt (1)  }`, type:`UInt(1) `  ,            comment: "Flag that shows if pool_active should be set to the pool or ignored"}) 
+            result.push({ name:`pool_active`,     value: `${p.loadInt (1)  }`, type:`UInt(1) `  ,            comment: "Flag is we should start the pool as unlocked"}) 
 
             p.loadRef()
             result.push({ name:`nftv3_content`     , value: `metadata` , type:`Cell(),Metadata` })
             p.loadRef()            
             result.push({ name:`nftv3item_content` , value: `metadata` , type:`Cell(),Metadata` })
 
-            result.push({ name:`has_minters`,  value: `${p.loadInt(1)  }`, type:`UInt(1) `}) 
+            result.push({ name:`has_minters`,  value: `${p.loadInt(1)  }`, type:`UInt(1) `       , comment: "Flag that stores if this message has minters" }) 
             const p1 = p.loadRef().beginParse()
             
             result.push({ name:`jetton0_minter`,   value: `${p1.loadAddress()}`, type:`Address()`, comment: "Address of the jetton0 minter, used by indexer and frontend"})

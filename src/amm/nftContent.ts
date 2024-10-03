@@ -4,8 +4,8 @@ import { packJettonOnchainMetadata } from "./common/jettonContent";
 export let nftContentToPack : { [s: string]: string | undefined } = {  
     name   : "AMM Pool Minter", 
     description : "AMM Pool LP Minter", 
-    cover_image : "https://pimenovalexander.github.io/resources/icons/header1.svg", 
-    image: "https://pimenovalexander.github.io/resources/icons/NFT.png" 
+    cover_image : "https://tonco.io/static/tonco-cover.jpeg", 
+    image: "https://tonco.io/static/tonco-astro.png" 
 }
 
 
@@ -36,9 +36,7 @@ export const nftContentPackedDefault: Cell =  embedJettonData(packJettonOnchainM
 export let nftItemContentToPack : { [s: string]: string | undefined } = {  
     name   : "AMM Pool Position", 
     description : "LP Position", 
-    image: "https://pimenovalexander.github.io/resources/icons/NFTItem.png",
-    //content_url : "https://pimenovalexander.github.io/resources/icons/NFTItem.png", 
-    //content_type : "image/png"
+    image: "https://tonco.io/static/tonco-astro.png",
 }
 
 let nftItemContent1ToPack = "https://pimenovalexander.github.io/resources/icons/metadata.json"

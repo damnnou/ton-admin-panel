@@ -1,7 +1,7 @@
-import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from "@ton/core"
-import { ContractOpcodes, OpcodesLookup } from "./opCodes"
-import { ContractMessageMeta, DummyCell } from "./DummyCell"
-import { nftContentPackedDefault, nftItemContentPackedDefault } from "./nftContent"
+import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from "@ton/core";
+import { ContractOpcodes, OpcodesLookup } from "./opCodes";
+import { ContractMessageMeta, DummyCell } from "./DummyCell";
+import { nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract";
 
 /** Inital data structures and settings **/
 export type RouterV3ContractConfig = {    
@@ -52,6 +52,43 @@ export class RouterV3Contract implements Contract {
         });
     }
 
+
+    deployPoolMessage(
+        jetton0WalletAddr: Address,
+        jetton1WalletAddr: Address,
+        tickSpacing : number,
+        sqrtPriceX96: bigint,
+        activatePool : boolean,
+        opts: {
+            jetton0Minter?: Address,
+            jetton1Minter?: Address,
+            admin? : Address,
+            controllerAddress?: Address,
+
+            nftContentPacked? : Cell,
+            nftItemContentPacked? : Cell
+        }
+    ) : Cell
+    {
+      const msg_body : Cell = beginCell()
+          .storeUint(ContractOpcodes.ROUTERV3_CREATE_POOL, 32) // OP code
+          .storeUint(0, 64) // query_id        
+          .storeAddress(jetton0WalletAddr)
+          .storeAddress(jetton1WalletAddr)
+          .storeUint(tickSpacing , 24)
+          .storeUint(sqrtPriceX96, 160)
+          .storeUint(activatePool ? 1 : 0, 1)
+          .storeRef (opts.nftContentPacked     ?? nftContentPackedDefault)
+          .storeRef (opts.nftItemContentPacked ?? nftItemContentPackedDefault)
+          .storeRef (beginCell()
+              .storeAddress(opts.jetton0Minter)
+              .storeAddress(opts.jetton1Minter)
+              .storeAddress(opts.controllerAddress)
+          .endCell())
+      .endCell();
+      return msg_body;
+    }
+
     /* Deploy pool */  
     async sendDeployPool(
       provider: ContractProvider, 
@@ -73,23 +110,7 @@ export class RouterV3Contract implements Contract {
       }
 
     ) {
-      const msg_body = beginCell()
-        .storeUint(ContractOpcodes.ROUTERV3_CREATE_POOL, 32) // OP code
-        .storeUint(0, 64) // query_id        
-        .storeAddress(jetton0WalletAddr)
-        .storeAddress(jetton1WalletAddr)
-        .storeUint(tickSpacing , 24)
-        .storeUint(sqrtPriceX96, 160)
-        .storeUint(activatePool ? 1 : 0, 1)
-        .storeRef(opts.nftContentPacked     ?? nftContentPackedDefault)
-        .storeRef(opts.nftItemContentPacked ?? nftItemContentPackedDefault)
-        .storeRef(beginCell()
-            .storeAddress(opts.jetton0Minter)
-            .storeAddress(opts.jetton1Minter)
-            .storeAddress(opts.controllerAddress)
-        .endCell())
-      .endCell();
-
+      const msg_body = this.deployPoolMessage(jetton0WalletAddr, jetton1WalletAddr, tickSpacing, sqrtPriceX96, activatePool, opts)
       await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
     }
 
