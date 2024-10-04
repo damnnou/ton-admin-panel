@@ -14,6 +14,7 @@ import {MyNetworkProvider, sendToIndex} from "../utils/MyNetworkProvider";
 import {intToLockType, JettonMinter, lockTypeToDescription} from "../jetton/JettonMinter";
 import {CommonMessageInfoRelaxedInternal} from "@ton/core/src/types/CommonMessageInfoRelaxed";
 import { ContractOpcodes } from "../amm/opCodes";
+import { parseActionBody } from "../orders";
 
 export interface MultisigOrderInfo {
     address: AddressInfo;
@@ -117,149 +118,7 @@ export const checkMultisigOrder = async (
 
     const actions = Dictionary.loadDirect(Dictionary.Keys.Uint(8), Dictionary.Values.Cell(), parsedData.order);
 
-    const parseActionBody = async (cell: Cell): Promise<string> => {
-        try {
-            const slice = cell.beginParse();
-            if (slice.remainingBits === 0 && slice.remainingRefs == 0) {
-                return "Send Toncoins from multisig without comment";
-            }
-        } catch (e) {
-        }
-
-        try {
-            const slice = cell.beginParse();
-            const op = slice.loadUint(32);
-            if (op == 0) {
-                const text = slice.loadStringTail();
-                return `Send Toncoins from multisig with comment "${sanitizeHTML(text)}"`;
-            }
-        } catch (e) {
-        }
-
-        try {
-            const slice = cell.beginParse();
-            const parsed = JettonMinter.parseMintMessage(slice);
-            assert(parsed.internalMessage.forwardPayload.remainingBits === 0 && parsed.internalMessage.forwardPayload.remainingRefs === 0, 'Mint forward payload not supported');
-            const toAddress = await formatAddressAndUrl(parsed.toAddress, isTestnet)
-            return `Mint ${parsed.internalMessage.jettonAmount} jettons (in units) to ${toAddress}; ${fromNano(parsed.tonAmount)} TON for gas`;
-        } catch (e) {
-        }
-
-        try {
-            const slice = cell.beginParse();
-            const parsed = JettonMinter.parseTopUp(slice);
-            return `Top Up`;
-        } catch (e) {
-        }
-
-        try {
-            const slice = cell.beginParse();
-            const parsed = JettonMinter.parseChangeAdmin(slice);
-            const newAdminAddress = await formatAddressAndUrl(parsed.newAdminAddress, isTestnet)
-            return `Change Admin to ${newAdminAddress}`;
-        } catch (e) {
-        }
-
-        try {
-            const slice = cell.beginParse();
-            const parsed = JettonMinter.parseClaimAdmin(slice);
-            return `Claim Admin`;
-        } catch (e) {
-        }
-
-        try {
-            const slice = cell.beginParse();
-            const parsed = JettonMinter.parseChangeContent(slice);
-            return `Change metadata URL to "${sanitizeHTML(parsed.newMetadataUrl)}"`;
-        } catch (e) {
-        }
-
-        try {
-            const slice = cell.beginParse();
-            const parsed = JettonMinter.parseTransfer(slice);
-            if (parsed.customPayload) throw new Error('Transfer custom payload not supported');
-            assert(parsed.forwardPayload.remainingBits === 0 && parsed.forwardPayload.remainingRefs === 0, 'Transfer forward payload not supported');
-            const toAddress = await formatAddressAndUrl(parsed.toAddress, isTestnet)
-            return `Transfer ${parsed.jettonAmount} jettons (in units) from multisig to user ${toAddress};`;
-        } catch (e) {
-        }
-
-
-        try {
-            const slice = cell.beginParse();
-            const parsed = JettonMinter.parseCallTo(slice, JettonMinter.parseSetStatus);
-            const userAddress = await formatAddressAndUrl(parsed.toAddress, isTestnet)
-            const lockType = intToLockType(parsed.action.newStatus);
-            return `Lock jetton wallet of user ${userAddress}. Set status "${lockType}" - "${lockTypeToDescription(lockType)}"; ${fromNano(parsed.tonAmount)} TON for gas`;
-        } catch (e) {
-        }
-
-        try {
-            const slice = cell.beginParse();
-            const parsed = JettonMinter.parseCallTo(slice, JettonMinter.parseTransfer);
-            if (parsed.action.customPayload) throw new Error('Force transfer custom payload not supported');
-            assert(parsed.action.forwardPayload.remainingBits === 0 && parsed.action.forwardPayload.remainingRefs === 0, 'Force transfer forward payload not supported');
-            const fromAddress = await formatAddressAndUrl(parsed.toAddress, isTestnet)
-            const toAddress = await formatAddressAndUrl(parsed.action.toAddress, isTestnet)
-            return `Force transfer ${parsed.action.jettonAmount} jettons (in units) from user ${fromAddress} to ${toAddress}; ${fromNano(parsed.tonAmount)} TON for gas`;
-        } catch (e) {
-        }
-
-        try {
-            const slice = cell.beginParse();
-            const parsed = JettonMinter.parseCallTo(slice, JettonMinter.parseBurn);
-            if (parsed.action.customPayload) throw new Error('Burn custom payload not supported');
-            const userAddress = await formatAddressAndUrl(parsed.toAddress, isTestnet)
-            return `Force burn ${parsed.action.jettonAmount} jettons (in units) from user ${userAddress}; ${fromNano(parsed.tonAmount)} TON for gas`;
-        } catch (e) {
-        }
-
-        try {
-            const p = cell.beginParse()
-            let opcode = p.loadUint(32)
-            if (opcode != ContractOpcodes.ROUTERV3_CREATE_POOL) throw new Error("Unknown opcode")
-            
-            let query_id = p.loadUint(64)
-            let jetton0Wallet = p.loadAddress()
-            let jetton1Wallet = p.loadAddress()
-            let tickSpacing = p.loadInt(24)
-            let priceX96 = p.loadUintBig(160)
-            p.loadRef()
-            p.loadRef()
-            let p1 = p.loadRef().beginParse()
-
-            let jetton0Minter = p1.loadAddress()
-            let jetton1Minter = p1.loadAddress()
-            let controller    = p1.loadAddress()
-
-            const jetton0MinterS = await formatAddressAndUrl(jetton0Minter, isTestnet)
-            const jetton1MinterS = await formatAddressAndUrl(jetton1Minter, isTestnet)
-
-            const jetton0WalletS = await formatAddressAndUrl(jetton0Wallet, isTestnet)
-            const jetton1WalletS = await formatAddressAndUrl(jetton1Wallet, isTestnet)
-
-
-            const controllerS = await formatAddressAndUrl(controller, isTestnet)
-
-            return `Create New Pool For<br/>` + 
-            `  Minter1: ${jetton0MinterS}<br/>` + 
-            `  Wallet1: ${jetton0WalletS}<br/>` + 
-
-            `  Minter2: ${jetton1MinterS}<br/>` + 
-            `  Wallet2: ${jetton1WalletS}<br/>` + 
-
-            `  Tick Spacing : ${tickSpacing}<br/>` +
-            `  Tick Spacing : ${priceX96}<br/>` +
-
-            `  Controller :  ${controllerS}<br/>`;
-        } catch (e) {
-        }
-
-        
-
-        throw new Error('Unsupported action')
-
-    }
+   
 
     let parsedActions: string[] = [];
 
@@ -303,7 +162,7 @@ export const checkMultisigOrder = async (
 
             const destAddress = await formatAddressAndUrl(info.dest, isTestnet);
             actionString += `<div>Send ${allBalance ? 'ALL BALANCE' : fromNano(info.value.coins)} TON to ${destAddress}</div>`
-            actionString += `<div>${await parseActionBody(messageRelaxed.body)}</div>`
+            actionString += `<div>${await parseActionBody(messageRelaxed.body, isTestnet)}</div>`
             if (sendMode) {
                 actionString += `<div>Send mode: ${sendModeString.join(', ')}.</div>`
             }

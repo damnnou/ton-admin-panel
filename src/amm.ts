@@ -1,14 +1,17 @@
 import { OrderType } from "./orders"
 
-import { RouterV3ContractConfig, routerv3ContractConfigToCell} from "./amm/RouterV3Contract";
+import { RouterV3Contract, RouterV3ContractConfig, routerv3ContractConfigToCell} from "./amm/RouterV3Contract";
 import { ContractOpcodes } from "./amm/opCodes";
 import { embedJettonData } from "./amm/nftContent";
-import { packJettonOnchainMetadata } from "./amm/common/jettonContent";
+import { packJettonOnchainMetadata, unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 
 import { contractDict } from "./contracts"
 import { Address, beginCell, Cell, contractAddress, StateInit } from "@ton/core";
 import { JettonMinter } from "./jetton/JettonMinter";
 import { MyNetworkProvider } from "./utils/MyNetworkProvider";
+
+import { encodePriceSqrt } from "./amm/frontmath/frontMath"
+import { PoolV3Contract } from "./amm/PoolV3Contract";
 
 /* Should make a class? */
 
@@ -22,7 +25,8 @@ export function ammOrderTypes(
             fields: {
                 amount: {
                     name: 'TON Amount',
-                    type: 'TON'
+                    type: 'TON',
+                    default : '0.4'
                 },
                 nonce: {
                     name: 'Nonce',
@@ -72,84 +76,88 @@ export function ammOrderTypes(
         {
             name: 'Deploy Pool',
             fields: {
-                amount: {
-                    name: 'TON Amount',
-                    type: 'TON'
-                },
+                amount: { name: 'TON Amount',     type: 'TON'     , default : "0.4" },
                 router: { name: 'Router Address', type: 'Address' },
 
                 jetton0minter: { name: 'Jetton 0 minter', type: 'Address' },
                 jetton1minter: { name: 'Jetton 1 minter', type: 'Address' },
 
-                tickSpacing : { name: 'Tick Spacing', type: 'BigInt' },
+                tickSpacing : { name: 'Tick Spacing', type: 'BigInt' , default : "1" },
 
-                price1reserve : { name: 'price.reserve1', type: 'BigInt' },
-                price2reserve : { name: 'price.reserve0', type: 'BigInt' },
+                price1reserve : { name: 'price.reserve1', type: 'BigInt' , default : "1" },
+                price0reserve : { name: 'price.reserve0', type: 'BigInt' , default : "1" },
                 
-                controller: { name: 'Operator', type: 'Address' },
-                nftName        : { name: 'NFT Name', type: 'String' },
-                nftDescription : { name: 'NFT description', type: 'String' },
-                nftImagePath   : { name: 'NFT Image URL', type: 'String' },
-                nftCoverPath   : { name: 'NFT Cover URL', type: 'String' }
+                controller: { name: 'Controller', type: 'Address' },
+                nftName        : { name: 'NFT Name (empty for default)', type: 'String' },
+                nftDescription : { name: 'NFT description(empty for default)', type: 'String' },
+                nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-astro.png"},
+                nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-cover.jpeg"}
 
             },
             makeMessage: async (values, multisigAddress : Address) => {
                 
-                let routerAddress = values.router.address
+                const routerAddress = values.router.address
 
-                let jetton0MinterAddress = values.jetton0minter.address
+                const jetton0MinterAddress = values.jetton0minter.address
                 console.log(`Minter 0 ${jetton0MinterAddress}`)
-                let jetton0 : JettonMinter = JettonMinter.createFromAddress(jetton0MinterAddress)
+                const jetton0 : JettonMinter = JettonMinter.createFromAddress(jetton0MinterAddress)
                 const provider0 = new MyNetworkProvider(jetton0MinterAddress, IS_TESTNET)
-                let jetton0Wallet = await jetton0.getWalletAddress(provider0, routerAddress)
+                const jetton0Wallet = await jetton0.getWalletAddress(provider0, routerAddress)
                 console.log(`Wallet 0 ${jetton0Wallet} of ${routerAddress}`)
 
-                let jetton1MinterAddress = values.jetton1minter.address
+                const jetton1MinterAddress = values.jetton1minter.address
                 console.log(`Minter 1 ${jetton1MinterAddress}`)
-                let jetton1 : JettonMinter = JettonMinter.createFromAddress(jetton1MinterAddress)
+                const jetton1 : JettonMinter = JettonMinter.createFromAddress(jetton1MinterAddress)
                 const provider1 = new MyNetworkProvider(jetton1MinterAddress, IS_TESTNET)
-                let jetton1Wallet = await jetton1.getWalletAddress(provider1, routerAddress)
+                const jetton1Wallet = await jetton1.getWalletAddress(provider1, routerAddress)
                 console.log(`Wallet 1 ${jetton1Wallet} of ${routerAddress}`)
 
+                const metadataPack0 = await jetton0.getJettonData(provider0)
+                const metadataPack1 = await jetton1.getJettonData(provider1)
+                const metadata0 = unpackJettonOnchainMetadata(metadataPack0.content)
+                const metadata1 = unpackJettonOnchainMetadata(metadataPack1.content)
+
+                console.log(metadata0)
+                console.log(metadata1)
+
+                let swapIds = PoolV3Contract.orderJettonId(jetton0Wallet, jetton1Wallet)
+
+                const reserve1 = BigInt(values.price1reserve)
+                const reserve0 = BigInt(values.price0reserve)
+                let price = (! swapIds) ? encodePriceSqrt(reserve1, reserve0) : encodePriceSqrt(reserve0, reserve1)
+
+                let poolStringName = `${metadata0["symbol"]}-${metadata1["symbol"]}`
                 let nftContentToPack : { [s: string]: string | undefined } =     {  
-                    name   : "Pool Minter:",
+                    name   : "Pool Minter:" + poolStringName,
                     description : "TONCO Pool LP Minter for ", 
-                    cover_image : "https://tonco.io/static/tonco-cover.jpeg", 
-                    image: "https://tonco.io/static/tonco-astro.png" 
+                    cover_image : values.nftCoverPath, 
+                    image: values.nftImagePath 
                 }
             
-                //const poolJetton0 = pool.getPoolOrderJetton(0)
-                //const poolJetton1 = pool.getPoolOrderJetton(1)
-                
-                const nftContentPacked: Cell = embedJettonData(packJettonOnchainMetadata(nftContentToPack),
-                        "TST1", Number(9), 
-                        "TST2", Number(9)            
-                )
+                const nftContentPacked: Cell = packJettonOnchainMetadata(nftContentToPack)
             
                 const nftItemContentToPack : { [s: string]: string | undefined } =     {  
-                    name   : "Pool Position", 
-                    description : "LP Position that corresponds to your liquidity in the pool ", 
-                    image: "https://tonco.io/static/tonco-astro.png",
+                    name   : "Pool " + poolStringName +" Position", 
+                    description : "LP Position that corresponds to your liquidity in the pool " + poolStringName, 
+                    image: values.nftImagePath,
                     attributes: '[ {"trait_type": "Brand", "value": "TONCO" } ]',
                 }
                 const nftItemContentPacked: Cell =  packJettonOnchainMetadata(nftItemContentToPack)
 
-                const msg_body = beginCell()
-                    .storeUint(ContractOpcodes.ROUTERV3_CREATE_POOL, 32) // OP code
-                    .storeUint(0, 64) // query_id        
-                    .storeAddress(jetton0Wallet)
-                    .storeAddress(jetton1Wallet)
-                    .storeUint(values.tickSpacing , 24)
-                    .storeUint(79228162514264337593543950336n, 160)
-                    .storeUint(1, 1) // Activate pool
-                    .storeRef(nftContentPacked)
-                    .storeRef(nftItemContentPacked)
-                    .storeRef(beginCell()
-                        .storeAddress(jetton0MinterAddress)
-                        .storeAddress(jetton1MinterAddress)
-                        .storeAddress(values.controller.address)
-                    .endCell())
-                .endCell();
+                const msg_body = RouterV3Contract.deployPoolMessage(
+                    jetton0Wallet,
+                    jetton1Wallet,
+                    values.tickSpacing,
+                    price,
+                    true,
+                    {                       
+                        jetton0Minter : jetton0MinterAddress,
+                        jetton1Minter : jetton1MinterAddress,
+                        nftContentPacked : nftContentPacked,
+                        nftItemContentPacked : nftItemContentPacked,
+                        controllerAddress : values.controller.address,
+                    }
+                )
 
                 return {
                     toAddress: values.router,

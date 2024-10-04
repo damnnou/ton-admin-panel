@@ -1,4 +1,4 @@
-import {Address, beginCell, Cell, comment, contractAddress, fromNano, SendMode, StateInit, storeStateInit, toNano} from "@ton/core";
+import {Address, beginCell, Cell, fromNano, SendMode, storeStateInit, toNano} from "@ton/core";
 import {THEME, TonConnectUI} from '@tonconnect/ui'
 import {
     AddressInfo,
@@ -9,16 +9,15 @@ import {
 } from "./utils/utils";
 import {checkMultisig, LastOrder, MultisigInfo} from "./multisig/MultisigChecker";
 import {checkMultisigOrder, MultisigOrderInfo} from "./multisig/MultisigOrderChecker";
-import {JettonMinter, LOCK_TYPES, LockType, lockTypeToDescription, lockTypeToInt} from "./jetton/JettonMinter";
+import {JettonMinter, LOCK_TYPES, LockType, lockTypeToDescription } from "./jetton/JettonMinter";
 import {Multisig} from "./multisig/Multisig";
 import {toUnits} from "./utils/units";
 import {checkJettonMinter} from "./jetton/JettonMinterChecker";
 import {MyNetworkProvider, sendToIndex} from "./utils/MyNetworkProvider";
 import {Order} from "./multisig/Order";
-import {JettonWallet} from "./jetton/JettonWallet";
 
 
-import { AMOUNT_TO_SEND, DEFAULT_AMOUNT, FieldType, OrderType, ValidatedValue } from "./orders"
+import { AMOUNT_TO_SEND, DEFAULT_AMOUNT, FieldType, OrderType, parseActionBody, ValidatedValue } from "./orders"
 
 import {ammOrderTypes} from "./amm"
 import {jettonOrderTypes} from "./jettons"
@@ -734,7 +733,7 @@ const renderNewOrderFields = (orderTypeIndex: number): void => {
                 }
                 html += `</select>`
             } else {
-                html += `<input id="newOrder_${orderTypeIndex}_${fieldId}">`
+                html += `<input id="newOrder_${orderTypeIndex}_${fieldId}"  ${field.default ? 'value="' + field.default + '"' : '' }  >`
             }
         }
     }
@@ -900,7 +899,7 @@ $('#newOrder_createButton').addEventListener('click', async () => {
     const payloadCell = messageParams.body;
     const expireAt = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30; // 1 month
 
-    const actions = Multisig.packOrder([
+    const actionsPacked = Multisig.packOrder([
         {
             type: 'transfer',
             sendMode: SendMode.PAY_GAS_SEPARATELY,
@@ -925,8 +924,10 @@ $('#newOrder_createButton').addEventListener('click', async () => {
         }
     ]);
 
-    const message = Multisig.newOrderMessage(actions, expireAt, isSigner, isSigner ? mySignerIndex : myProposerIndex, orderId, 0n)
+    const message = Multisig.newOrderMessage(actionsPacked, expireAt, isSigner, isSigner ? mySignerIndex : myProposerIndex, orderId, 0n)
     const messageBase64 = message.toBoc().toString('base64');
+
+    $('#newOrder_summary').innerHTML = 'Summary: <br/>' + (await parseActionBody(payloadCell, IS_TESTNET));
 
     console.log({
         toAddress,

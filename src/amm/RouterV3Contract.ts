@@ -53,7 +53,7 @@ export class RouterV3Contract implements Contract {
     }
 
 
-    deployPoolMessage(
+    static deployPoolMessage(
         jetton0WalletAddr: Address,
         jetton1WalletAddr: Address,
         tickSpacing : number,
@@ -62,7 +62,6 @@ export class RouterV3Contract implements Contract {
         opts: {
             jetton0Minter?: Address,
             jetton1Minter?: Address,
-            admin? : Address,
             controllerAddress?: Address,
 
             nftContentPacked? : Cell,
@@ -89,6 +88,50 @@ export class RouterV3Contract implements Contract {
       return msg_body;
     }
 
+    /* We need to rework printParsedInput not to double the code */
+    static unpackDeployPoolMessage( body :Cell) : {
+        jetton0WalletAddr: Address,
+        jetton1WalletAddr: Address,
+        tickSpacing : number,
+        sqrtPriceX96: bigint,
+        activatePool : boolean,
+        jetton0Minter?: Address,
+        jetton1Minter?: Address,
+        controllerAddress?: Address,
+
+        nftContentPacked? : Cell,
+        nftItemContentPacked? : Cell
+    }
+    {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        const query_id = s.loadUint(64)
+        const jetton0WalletAddr = s.loadAddress()
+        const jetton1WalletAddr = s.loadAddress()
+        let tickSpacing = s.loadInt(24)
+        let sqrtPriceX96 = s.loadUintBig(160)
+        let activatePool = (s.loadUint(1) != 0)
+        let nftContentPacked = s.loadRef()
+        let nftItemContentPacked = s.loadRef()
+
+        let s1 = s.loadRef().beginParse()
+        let jetton0Minter = s1.loadAddress()
+        let jetton1Minter = s1.loadAddress()
+        let controllerAddress = s1.loadAddress()
+
+        return {
+            jetton0WalletAddr, jetton1WalletAddr,
+            tickSpacing,
+            sqrtPriceX96,
+            activatePool,
+            jetton0Minter,
+            jetton1Minter,
+            controllerAddress,    
+            nftContentPacked,
+            nftItemContentPacked
+        }     
+    }
+
     /* Deploy pool */  
     async sendDeployPool(
       provider: ContractProvider, 
@@ -102,7 +145,6 @@ export class RouterV3Contract implements Contract {
       opts: {
           jetton0Minter?: Address,
           jetton1Minter?: Address,
-          admin? : Address,
           controllerAddress?: Address,
 
           nftContentPacked? : Cell,
@@ -110,7 +152,7 @@ export class RouterV3Contract implements Contract {
       }
 
     ) {
-      const msg_body = this.deployPoolMessage(jetton0WalletAddr, jetton1WalletAddr, tickSpacing, sqrtPriceX96, activatePool, opts)
+      const msg_body = RouterV3Contract.deployPoolMessage(jetton0WalletAddr, jetton1WalletAddr, tickSpacing, sqrtPriceX96, activatePool, opts)
       await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
     }
 
