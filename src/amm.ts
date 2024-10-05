@@ -2,16 +2,17 @@ import { OrderType } from "./orders"
 
 import { RouterV3Contract, RouterV3ContractConfig, routerv3ContractConfigToCell} from "./amm/RouterV3Contract";
 import { ContractOpcodes } from "./amm/opCodes";
-import { embedJettonData } from "./amm/nftContent";
 import { packJettonOnchainMetadata, unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 
 import { contractDict } from "./contracts"
 import { Address, beginCell, Cell, contractAddress, StateInit } from "@ton/core";
-import { JettonMinter } from "./jetton/JettonMinter";
-import { MyNetworkProvider } from "./utils/MyNetworkProvider";
+import { JettonMinter } from "./jetton/JettonMinter"
+import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
 import { encodePriceSqrt } from "./amm/frontmath/frontMath"
-import { PoolV3Contract } from "./amm/PoolV3Contract";
+import { PoolV3Contract } from "./amm/PoolV3Contract"
+
+import { getJettonMetadata } from "./jettonCache"
 
 /* Should make a class? */
 
@@ -23,15 +24,8 @@ export function ammOrderTypes(
         {
             name: 'Deploy Router',
             fields: {
-                amount: {
-                    name: 'TON Amount',
-                    type: 'TON',
-                    default : '0.4'
-                },
-                nonce: {
-                    name: 'Nonce',
-                    type: 'BigInt'
-                }
+                amount: { name: 'TON Amount', type: 'TON', default : '0.4' },
+                nonce : { name: 'Nonce', type: 'BigInt' }
             },
             makeMessage: async (values, multisigAddress : Address) => {
                 let buffer;
@@ -74,6 +68,25 @@ export function ammOrderTypes(
         },
 
         {
+            name: 'Change Router Admin',
+            fields: {
+                router   : { name: 'Router', type: 'Address' },
+                amount   : { name: 'TON Amount', type: 'TON', default : '0.4' },
+                newAdmin : { name: 'New Admin', type: 'Address' }
+            },
+            makeMessage: async (values, multisigAddress : Address) => {
+                
+
+                return {
+                    toAddress: {address: values.router.address, isTestOnly : true, isBounceable: false},
+                    tonAmount: values.amount,
+                    body: RouterV3Contract.changeAdminMessage(values.newAdmin.address)
+                };
+            }
+        },
+
+
+        {
             name: 'Deploy Pool',
             fields: {
                 amount: { name: 'TON Amount',     type: 'TON'     , default : "0.4" },
@@ -87,11 +100,12 @@ export function ammOrderTypes(
                 price1reserve : { name: 'price.reserve1', type: 'BigInt' , default : "1" },
                 price0reserve : { name: 'price.reserve0', type: 'BigInt' , default : "1" },
                 
-                controller: { name: 'Controller', type: 'Address' },
+                controller     : { name: 'Controller', type: 'Address' },
                 nftName        : { name: 'NFT Name (empty for default)', type: 'String' },
                 nftDescription : { name: 'NFT description(empty for default)', type: 'String' },
                 nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-astro.png"},
-                nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-cover.jpeg"}
+                nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-cover.jpeg"},
+                nftItemAttr    : { name: 'NFT Item Attributes', type: 'String', default: '[ {"trait_type": "Brand", "value": "TONCO" } ]'},
 
             },
             makeMessage: async (values, multisigAddress : Address) => {
@@ -112,10 +126,8 @@ export function ammOrderTypes(
                 const jetton1Wallet = await jetton1.getWalletAddress(provider1, routerAddress)
                 console.log(`Wallet 1 ${jetton1Wallet} of ${routerAddress}`)
 
-                const metadataPack0 = await jetton0.getJettonData(provider0)
-                const metadataPack1 = await jetton1.getJettonData(provider1)
-                const metadata0 = unpackJettonOnchainMetadata(metadataPack0.content)
-                const metadata1 = unpackJettonOnchainMetadata(metadataPack1.content)
+                const metadata0 = await getJettonMetadata(jetton0MinterAddress, IS_TESTNET)
+                const metadata1 = await getJettonMetadata(jetton1MinterAddress, IS_TESTNET)
 
                 console.log(metadata0)
                 console.log(metadata1)
@@ -137,10 +149,10 @@ export function ammOrderTypes(
                 const nftContentPacked: Cell = packJettonOnchainMetadata(nftContentToPack)
             
                 const nftItemContentToPack : { [s: string]: string | undefined } =     {  
-                    name   : "Pool " + poolStringName +" Position", 
-                    description : "LP Position that corresponds to your liquidity in the pool " + poolStringName, 
+                    name        : values.nftName        != "" ? values.nftName        : "Pool " + poolStringName +" Position", 
+                    description : values.nftDescription != "" ? values.nftDescription : "LP Position that corresponds to your liquidity in the pool " + poolStringName, 
                     image: values.nftImagePath,
-                    attributes: '[ {"trait_type": "Brand", "value": "TONCO" } ]',
+                    attributes: values.nftItemAttr,
                 }
                 const nftItemContentPacked: Cell =  packJettonOnchainMetadata(nftItemContentToPack)
 
@@ -170,62 +182,89 @@ export function ammOrderTypes(
         {
             name: 'Change Pool Controller',
             fields: {
-                pool: {
-                    name: 'Pool Address',
-                    type: 'Address'
-                },
-                controller: {
-                    name: 'Controller Address',
-                    type: 'Address'
-                },
-                amount: {
-                    name: 'TON Amount',
-                    type: 'TON'
-                },
+                pool:       {name: 'Pool Address'      , type: 'Address'},
+                controller: {name: 'Controller Address', type: 'Address'},
+                amount:     {name: 'TON Amount'        , type: 'TON'},
             },
             makeMessage: async (values, multisigAddress : Address) => {
+                const msg_body = PoolV3Contract.reinitMessage({controller : values.controller.address})
                 return {
                     toAddress: values.pool,
                     tonAmount: values.amount,
-                    body: beginCell().endCell()
-                };
+                    body: msg_body
+                }
             }
         },
         {
             name: 'Change Pool TickSpacing',
             fields: {
-                pool: {
-                    name: 'Pool Address',
-                    type: 'Address'
-                },
-                tickSpacing: {
-                    name: 'Tick Spacing',
-                    type: 'BigInt'
-                },
-                amount: {
-                    name: 'TON Amount',
-                    type: 'TON'
-                },
+                pool:        { name: 'Pool Address', type: 'Address' },
+                tickSpacing: { name: 'Tick Spacing', type: 'BigInt'},
+                amount:      { name: 'TON Amount',   type: 'TON'},
+            },
+            makeMessage: async (values, multisigAddress : Address) => {
+                const msg_body = PoolV3Contract.reinitMessage({tickSpacing : values.tickSpacing})
+                return {
+                    toAddress: values.pool,
+                    tonAmount: values.amount,
+                    body: msg_body
+                }
+            }
+        },
+        {
+            name: 'Change Pool Price',
+            fields: {
+                pool:           { name: 'Pool Address',   type: 'Address' },
+                price1reserve : { name: 'price.reserve1', type: 'BigInt' , default : "1" },
+                price0reserve : { name: 'price.reserve0', type: 'BigInt' , default : "1" },
+                amount:         { name: 'TON Amount',     type: 'TON'},
+            },
+            makeMessage: async (values, multisigAddress : Address) => {
+                const reserve1 = BigInt(values.price1reserve)
+                const reserve0 = BigInt(values.price0reserve)
+                const msg_body = PoolV3Contract.reinitMessage({sqrtPriceX96 : encodePriceSqrt(reserve1, reserve0)})
+                return {
+                    toAddress: values.pool,
+                    tonAmount: values.amount,
+                    body: msg_body
+                }
+            }
+        },     
+        {
+            name: 'Change Pool Fee',
+            fields: {
+                pool:        { name: 'Pool Address', type: 'Address' },
+                activeFee:   { name: 'Active Fee'  , type: 'BigInt' },
+                protocolFee: { name: 'Protocol Fee', type: 'BigInt' },
+                amount:      { name: 'TON Amount'  , type: 'TON' },
             },
             makeMessage: async (values, multisigAddress : Address) => {
                 return {
                     toAddress: values.pool,
                     tonAmount: values.amount,
-                    body: beginCell().endCell()
-                };
+                    body: PoolV3Contract.messageSetFees(
+                        Number(values.protocolFee), 
+                        Number(values.activeFee), 
+                        Number(values.activeFee)
+                    )
+                }
             }
         },
         {
-            name: 'Collect Pool Protocol Fee',
+            name: 'Change NFT Content',
             fields: {
                 pool: {
                     name: 'Pool Address',
                     type: 'Address'
-                },
+                },                
                 amount: {
                     name: 'TON Amount',
                     type: 'TON'
                 },
+                nftName        : { name: 'NFT Name (empty for default)', type: 'String' },
+                nftDescription : { name: 'NFT description(empty for default)', type: 'String' },
+                nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-astro.png"},
+                nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-cover.jpeg"},
             },
             makeMessage: async (values, multisigAddress : Address) => {
                 const msg_body = beginCell()
@@ -241,7 +280,7 @@ export function ammOrderTypes(
             }
         },
         {
-            name: 'Change Pool Fee',
+            name: 'Change NFT Item',
             fields: {
                 pool: {
                     name: 'Pool Address',
@@ -273,5 +312,35 @@ export function ammOrderTypes(
                 };
             }
         },
+        {
+            name: 'Collect Pool Protocol Fee',
+            fields: {
+                pool:   { name: 'Pool Address',  type: 'Address' },
+                amount: { name: 'TON Amount',    type: 'TON'     },
+            },
+            makeMessage: async (values, multisigAddress : Address) => {
+                const msg_body = beginCell()
+                    .storeUint(ContractOpcodes.POOLV3_COLLECT_PROTOCOL, 32) // OP code
+                    .storeUint(0, 64) // query_id          
+                .endCell();
+
+                return {
+                    toAddress: values.pool,
+                    tonAmount: values.amount,
+                    body: msg_body
+                };
+            }
+        },
+        {
+            name: '--------------------',
+            fields: {},
+            makeMessage: async (values, multisigAddress : Address) => {
+                return {
+                    toAddress: values.pool,
+                    tonAmount: values.amount,
+                    body: beginCell().endCell()
+                };
+            }
+        }
     ]
 }

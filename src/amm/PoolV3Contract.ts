@@ -237,7 +237,6 @@ export class PoolV3Contract implements Contract {
                 .storeAddress(opts.jetton1Minter)
            .endCell()
         }
-
         
         let body : Cell = beginCell()
             .storeUint(ContractOpcodes.POOLV3_INIT, 32) // OP code
@@ -266,7 +265,8 @@ export class PoolV3Contract implements Contract {
         });
     }
 
-    async sendReinit(provider: ContractProvider, via: Sender, value: bigint,           
+
+    static reinitMessage(
         opts: {
             activate_pool? : boolean, 
             tickSpacing?   : number,
@@ -281,8 +281,8 @@ export class PoolV3Contract implements Contract {
             nftContentPacked? : Cell,
             nftItemContentPacked? : Cell
         }
-    
-    ) {
+    ) : Cell
+    {
         let minterCell = null;
         if (opts.jetton0Minter && opts.jetton0Minter) {
             minterCell = beginCell()
@@ -295,7 +295,7 @@ export class PoolV3Contract implements Contract {
         let body : Cell = beginCell()
             .storeUint(ContractOpcodes.POOLV3_INIT, 32) // OP code
             .storeUint(0, 64) // query_id
-            .storeUint(opts.admin ? 1 : 0, 1)
+            .storeUint(opts.admin == undefined ? 0 : 1, 1)
             .storeAddress(opts.admin)                 // null is an invalid Address, but valid slice
             .storeUint(opts.controller == undefined ? 0 : 1, 1)
             .storeAddress(opts.controller)
@@ -311,11 +311,110 @@ export class PoolV3Contract implements Contract {
             .storeRef(opts.nftItemContentPacked ?? beginCell().endCell())
             .storeMaybeRef(minterCell)
         .endCell();
-    
-        await provider.internal(via, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: body })
+
+        return body
+    }
+
+    static unpackReinitMessage( body :Cell) : {
+        activate_pool? : boolean, 
+        tickSpacing?   : number,
+        sqrtPriceX96?  : bigint,
+
+
+        jetton0Minter? : Address,
+        jetton1Minter? : Address,
+        admin? : Address,
+        controller?: Address,
+
+        nftContentPacked? : Cell,
+        nftItemContentPacked? : Cell
+    }
+    {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        const query_id = s.loadUint(64)
+        const setAdmin = s.loadUint(1)
+        const admin = (setAdmin == 1) ? s.loadAddress() : undefined
+        if (setAdmin == 0) { s.loadUint(2) }
+
+        const setControl = s.loadUint(1)
+        const controller = (setControl == 1) ? s.loadAddress() : undefined
+        if (setControl == 0) { s.loadUint(2) }
+
+        const setTickSpacing = s.loadUint(1)
+        let tickSpacing = s.loadUint(24) 
+        if (setTickSpacing == 0) tickSpacing = undefined
+
+        const setPrice = s.loadUint(1)
+        let sqrtPriceX96 = s.loadUintBig(160) 
+        if (setPrice == 0) sqrtPriceX96 = undefined
+
+        const setActive = s.loadUint(1)
+        let activate_pool = (s.loadUint(1) == 1)
+        if (setActive == 0) activate_pool = undefined
+
+        let nftContentPacked = s.loadRef()
+        let nftItemContentPacked = s.loadRef()
+
+
+        return {admin, controller, tickSpacing, sqrtPriceX96, activate_pool, nftContentPacked, nftItemContentPacked}
+
     }
 
 
+    async sendReinit(provider: ContractProvider, via: Sender, value: bigint,           
+        opts: {
+            activate_pool? : boolean, 
+            tickSpacing?   : number,
+            sqrtPriceX96?  : bigint,
+
+            jetton0Minter? : Address,
+            jetton1Minter? : Address,
+            admin? : Address,
+            controller?: Address,
+
+            nftContentPacked? : Cell,
+            nftItemContentPacked? : Cell
+        }
+    
+    ) {
+        await provider.internal(via, { 
+            value, 
+            sendMode: SendMode.PAY_GAS_SEPARATELY, 
+            body: PoolV3Contract.reinitMessage(opts)
+         })
+    }
+
+    static messageSetFees(
+        protocolFee: number,
+        lpFee      : number,
+        currentFee : number
+    ) {
+        return beginCell()
+            .storeUint(ContractOpcodes.POOLV3_SET_FEE, 32) // OP code
+            .storeUint(0, 64) // query_id  
+            .storeUint(protocolFee, 16)
+            .storeUint(lpFee      , 16)        
+            .storeUint(currentFee , 16)                
+        .endCell()
+    }
+
+    static unpackSetFeesMessage( body :Cell ) : {
+        protocolFee: number,
+        lpFee      : number,
+        currentFee : number
+    } {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        if (op != ContractOpcodes.POOLV3_SET_FEE)
+            throw Error("Wrong opcode")
+
+        const query_id = s.loadUint(64)
+        const protocolFee = s.loadUint(16)
+        const lpFee = s.loadUint(16)
+        const currentFee = s.loadUint(16)
+        return {protocolFee, lpFee, currentFee}
+    }
 
     async sendSetFees(
         provider: ContractProvider, 
@@ -326,14 +425,7 @@ export class PoolV3Contract implements Contract {
         lpFee      : number,
         currentFee : number
     ) {
-        const msg_body = beginCell()
-            .storeUint(ContractOpcodes.POOLV3_SET_FEE, 32) // OP code
-            .storeUint(0, 64) // query_id  
-            .storeUint(protocolFee, 16)
-            .storeUint(lpFee      , 16)        
-            .storeUint(currentFee , 16)                
-        .endCell()
-
+        const msg_body = PoolV3Contract.messageSetFees(protocolFee, lpFee, currentFee)
         await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body })
     }
 
@@ -355,17 +447,29 @@ export class PoolV3Contract implements Contract {
         await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body })
     }
 
+    static messageCollectProtocol() : Cell {
+        return beginCell()
+            .storeUint(ContractOpcodes.POOLV3_COLLECT_PROTOCOL, 32) // OP code
+            .storeUint(0, 64) // query_id          
+        .endCell()
+    }
+
+    static unpackCollectProtocolMessage(body : Cell) {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        if (op != ContractOpcodes.POOLV3_COLLECT_PROTOCOL)
+            throw Error("Wrong opcode")
+
+        const query_id = s.loadUint(64)
+    }
+
     async sendCollectProtocol(
         provider: ContractProvider, 
         sender: Sender, 
         value: bigint, 
     ) {
-        const msg_body = beginCell()
-            .storeUint(ContractOpcodes.POOLV3_COLLECT_PROTOCOL, 32) // OP code
-            .storeUint(0, 64) // query_id          
-        .endCell()
-
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body })
+        
+        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: PoolV3Contract.messageCollectProtocol() })
     }
      
 

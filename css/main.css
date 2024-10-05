@@ -202,7 +202,7 @@ button:disabled, .btn:disabled {
     flex-direction: column;
     margin-top: 80px;
     width: 100%;
-    max-width: 700px;
+    max-width: 900px;
 }
 
 #newOrderScreen input, #newOrderScreen select {

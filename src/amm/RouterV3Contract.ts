@@ -89,7 +89,7 @@ export class RouterV3Contract implements Contract {
     }
 
     /* We need to rework printParsedInput not to double the code */
-    static unpackDeployPoolMessage( body :Cell) : {
+    static unpackDeployPoolMessage( body : Cell) : {
         jetton0WalletAddr: Address,
         jetton1WalletAddr: Address,
         tickSpacing : number,
@@ -101,10 +101,13 @@ export class RouterV3Contract implements Contract {
 
         nftContentPacked? : Cell,
         nftItemContentPacked? : Cell
-    }
+    } 
     {
         let s = body.beginParse()
         const op       = s.loadUint(32)
+        if (op != ContractOpcodes.ROUTERV3_CREATE_POOL)
+            throw Error("Wrong opcode")
+
         const query_id = s.loadUint(64)
         const jetton0WalletAddr = s.loadAddress()
         const jetton1WalletAddr = s.loadAddress()
@@ -155,6 +158,43 @@ export class RouterV3Contract implements Contract {
       const msg_body = RouterV3Contract.deployPoolMessage(jetton0WalletAddr, jetton1WalletAddr, tickSpacing, sqrtPriceX96, activatePool, opts)
       await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
     }
+
+
+    async sendResetGas(provider: ContractProvider, sender: Sender, value: bigint) {
+        const msg_body = beginCell()
+            .storeUint(ContractOpcodes.ROUTERV3_RESET_GAS, 32) // OP code
+            .storeUint(0, 64) // QueryID what for?
+        .endCell();
+
+        return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
+    }
+
+    static changeAdminMessage(newAdmin : Address) : Cell {
+        return beginCell()
+            .storeUint(ContractOpcodes.ROUTERV3_CHANGE_ADMIN, 32) // OP code
+            .storeUint(0, 64) // QueryID what for?
+            .storeAddress(newAdmin)
+        .endCell();
+    }
+
+    static unpackChangeAdminMessage( body :Cell) : { newAdmin : Address }
+    {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        if (op != ContractOpcodes.ROUTERV3_CHANGE_ADMIN)
+            throw Error("Wrong opcode")
+
+        const query_id = s.loadUint(64)
+        const newAdmin = s.loadAddress()
+        return {newAdmin}
+    }
+
+
+    async sendChangeAdmin(provider: ContractProvider, sender: Sender, value: bigint, newAdmin : Address) {
+        const msg_body = RouterV3Contract.changeAdminMessage(newAdmin)
+        return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
+    }
+
 
     /** Getters **/
     async getIsLocked(provider: ContractProvider) : Promise<boolean> {

@@ -43,6 +43,7 @@ export class ContractOpcodes {
     static POOLV3_START_BURN         : number = 0x530b5f2c // 1393254188
     static POOLV3_BURN               : number = 0xd73ac09d // 3610951837
     static POOLV3_COLLECT_PROTOCOL   : number = 0xd3f8a538 // 3556287800
+    static POOLV3_RESET_GAS          : number = 0x42a0fb43 // 1117846339
     static POOLV3_MINT_M             : number = 0xdbb7bb55 // 3686251349
     static POOLV3_BURN_M             : number = 0xe639646c // 3862520940
     static POOLV3_SWAP_M             : number = 0xdb913023 // 3683725347
@@ -64,6 +65,7 @@ export class ContractOpcodes {
     static ROUTERV3_TRANSFER_NOTIFICATION : number = 0xf189f909 // 4052351241
     static ROUTERV3_CREATE_POOL      : number = 0x2e3034ef // 774911215
     static ROUTERV3_RESET_GAS        : number = 0x42a0fb43 // 1117846339
+    static ROUTERV3_CHANGE_ADMIN     : number = 0xd4deb03b // 3571363899
     static SINKV3_SET                : number = 0xe61425dc // 3860080092
     static SINKV3_ADD                : number = 0xfd1a73e7 // 4246369255
     static SINKV3_TEST_GAS           : number = 0x7337ed7 // 120815319
@@ -95,7 +97,7 @@ export const OpcodesLookup = {
     0x2fcb26a2 : "NFT_GET_STATIC_DATA,POSITIONNFTV3_GET_STATIC_DATA",
     0x3205adbd : "POOLV3_UNLOCK",
     0x3ebe5431 : "ACCOUNTV3_ADD_LIQUIDITY",
-    0x42a0fb43 : "ACCOUNTV3_RESET_GAS,ROUTERV3_RESET_GAS",
+    0x42a0fb43 : "ACCOUNTV3_RESET_GAS,POOLV3_RESET_GAS,ROUTERV3_RESET_GAS",
     0x441c39ed : "POOLV3_INIT",
     0x4468de77 : "POOLV3_FUND_ACCOUNT",
     0x46ca335a : "POSITIONNFTV3_POSITION_BURN",
@@ -122,6 +124,7 @@ export const OpcodesLookup = {
     0xcf5f4313 : "TONPROXY_MINTER_DEPLOY_WALLET",
     0xd1735400 : "JETTON_TAKE_WALLET_ADDRESS,TONPROXY_MINTER_TAKE_WALLET_ADDRESS",
     0xd3f8a538 : "POOLV3_COLLECT_PROTOCOL",
+    0xd4deb03b : "ROUTERV3_CHANGE_ADMIN",
     0xd53276db : "JETTON_EXCESSES,NFT_EXCESSES,POSITIONNFTV3_EXCESSES",
     0xd5ecca2a : "POSITIONNFTV3_POSITION_INIT",
     0xd73ac09d : "POOLV3_BURN",

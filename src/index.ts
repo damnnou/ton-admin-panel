@@ -5,15 +5,16 @@ import {
     addressToString,
     equalsMsgAddresses,
     makeAddressLink,
+    sanitizeHTML,
     validateUserFriendlyAddress
 } from "./utils/utils";
 import {checkMultisig, LastOrder, MultisigInfo} from "./multisig/MultisigChecker";
 import {checkMultisigOrder, MultisigOrderInfo} from "./multisig/MultisigOrderChecker";
-import {JettonMinter, LOCK_TYPES, LockType, lockTypeToDescription } from "./jetton/JettonMinter";
+import {LOCK_TYPES, LockType, lockTypeToDescription } from "./jetton/JettonMinter";
 import {Multisig} from "./multisig/Multisig";
 import {toUnits} from "./utils/units";
 import {checkJettonMinter} from "./jetton/JettonMinterChecker";
-import {MyNetworkProvider, sendToIndex} from "./utils/MyNetworkProvider";
+import {sendToIndex} from "./utils/MyNetworkProvider";
 import {Order} from "./multisig/Order";
 
 
@@ -604,6 +605,11 @@ const validateValue = (fieldName: string, value: string, fieldType: FieldType): 
         }
     }
 
+    // String can be empty
+    if (fieldType == "String") {
+        return makeValue(value);
+    }
+
     if (value === null || value === undefined || value === '') {
         return makeError(`Empty`);
     }
@@ -632,9 +638,6 @@ const validateValue = (fieldName: string, value: string, fieldType: FieldType): 
             if (!value.startsWith('https://')) {
                 return makeError('Invalid URL');
             }
-            return makeValue(value);
-
-        case 'String':
             return makeValue(value);
 
         case 'Status':
@@ -733,7 +736,7 @@ const renderNewOrderFields = (orderTypeIndex: number): void => {
                 }
                 html += `</select>`
             } else {
-                html += `<input id="newOrder_${orderTypeIndex}_${fieldId}"  ${field.default ? 'value="' + field.default + '"' : '' }  >`
+                html += `<input id="newOrder_${orderTypeIndex}_${fieldId}"  ${field.default ? 'value="' + sanitizeHTML(field.default) + '"' : '' }  >`
             }
         }
     }
