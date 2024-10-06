@@ -38,7 +38,7 @@ export function ammOrderTypes(
                 buffer = Buffer.from(contractDict["AccountV3Contract"], "hex")
                 let accountCell : Cell = Cell.fromBoc(buffer)[0]
 
-                buffer = Buffer.from(contractDict["AccountV3Contract"], "hex")
+                buffer = Buffer.from(contractDict["PositionNFTV3Contract"], "hex")
                 let positionCell : Cell = Cell.fromBoc(buffer)[0]
 
 
@@ -56,6 +56,13 @@ export function ammOrderTypes(
                 const routerStateInit: StateInit = { data: routerData,  code: routerCell }
                 const routerAddress: Address = contractAddress(0, routerStateInit)
 
+                console.log(" Pool Code Hash   :", "0x" + poolCell    .hash(0).toString("hex"))
+                console.log(" Router Code Hash :", "0x" + routerCell  .hash(0).toString("hex"))
+                console.log(" Account Code Hash:", "0x" + accountCell .hash(0).toString("hex"))
+                console.log(" NFT Code Hash    :", "0x" + positionCell.hash(0).toString("hex"))    
+
+                console.log(" Admin Address    :", "0x" + multisigAddress.toString())
+                        
                 console.log(`We would deploy router to ${routerAddress}`)
 
                 return {
