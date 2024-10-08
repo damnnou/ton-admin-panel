@@ -1,4 +1,4 @@
-import { Address, Cell, fromNano, StateInit, toNano } from "@ton/core";
+import { Address, Cell, fromNano, MessageRelaxed, StateInit, toNano } from "@ton/core";
 import { AddressInfo, assert, formatAddressAndUrl, sanitizeHTML } from "./utils/utils";
 import { intToLockType, JettonMinter, lockTypeToDescription } from "./jetton/JettonMinter";
 import { ContractOpcodes } from "./amm/opCodes";
@@ -42,8 +42,21 @@ export interface OrderType {
 
 /* Cut this function in parts */
 
-export async function parseActionBody (cell: Cell, isTestnet : boolean): Promise<string> 
+export async function parseActionBody (msg: MessageRelaxed, isTestnet : boolean): Promise<string> 
 {
+
+    if (msg.init) {
+
+        const routerCodeCell = "0x" + msg.init.code.hash(0).toString("hex");
+
+        const targetAddrS = await formatAddressAndUrl(msg.info.dest as Address, isTestnet)
+
+        return `Deploy contract to ${targetAddrS} <br>` + 
+               `Router Code hash: ${routerCodeCell}`
+    }
+
+    const cell: Cell = msg.body
+
     try {
         const slice = cell.beginParse();
         if (slice.remainingBits === 0 && slice.remainingRefs == 0) {

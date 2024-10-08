@@ -1,4 +1,4 @@
-import {Address, beginCell, Cell, fromNano, SendMode, storeStateInit, toNano} from "@ton/core";
+import {Address, beginCell, Cell, fromNano, MessageRelaxed, SendMode, storeStateInit, toNano} from "@ton/core";
 import {THEME, TonConnectUI} from '@tonconnect/ui'
 import {
     AddressInfo,
@@ -902,35 +902,37 @@ $('#newOrder_createButton').addEventListener('click', async () => {
     const payloadCell = messageParams.body;
     const expireAt = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30; // 1 month
 
+    const innerMessage : MessageRelaxed = {
+        info: {
+            type: 'internal',
+            ihrDisabled: false,
+            bounce: true,
+            bounced: false,
+            dest: toAddress.address,
+            value: {
+                coins: tonAmount
+            },
+            ihrFee: 0n,
+            forwardFee: 0n,
+            createdLt: 0n,
+            createdAt: 0                    
+        },  
+        init: messageParams.init ?? undefined,
+        body: payloadCell
+    }
+
     const actionsPacked = Multisig.packOrder([
         {
             type: 'transfer',
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            message: {
-                info: {
-                    type: 'internal',
-                    ihrDisabled: false,
-                    bounce: true,
-                    bounced: false,
-                    dest: toAddress.address,
-                    value: {
-                        coins: tonAmount
-                    },
-                    ihrFee: 0n,
-                    forwardFee: 0n,
-                    createdLt: 0n,
-                    createdAt: 0                    
-                },  
-                init: messageParams.init ?? undefined,
-                body: payloadCell
-            }
+            message: innerMessage
         }
     ]);
 
     const message = Multisig.newOrderMessage(actionsPacked, expireAt, isSigner, isSigner ? mySignerIndex : myProposerIndex, orderId, 0n)
     const messageBase64 = message.toBoc().toString('base64');
 
-    $('#newOrder_summary').innerHTML = 'Summary: <br/>' + (await parseActionBody(payloadCell, IS_TESTNET));
+    $('#newOrder_summary').innerHTML = 'Summary: <br/>' + (await parseActionBody(innerMessage, IS_TESTNET));
 
     console.log({
         toAddress,
