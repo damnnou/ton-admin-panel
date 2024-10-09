@@ -84,3 +84,13 @@ export const sanitizeHTML = (text: string): string => {
     d.innerText = text;
     return d.innerHTML;
 }
+
+/* Is this the best way??? */
+export function escapeHtml(unsafe: string): string {
+    return unsafe
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}

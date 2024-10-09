@@ -32,10 +32,9 @@ export interface OrderType {
     name: string;
     fields: { [key: string]: OrderField };
     check?: (values: { [key: string]: any }) => Promise<ValidatedValue>;
-    makeMessage: (values: { [key: string]: any }, multisigAddress : Address) => Promise<MakeMessageResult>;
+    makeMessage: (values: { [key: string]: any }, multisigAddress : Address) => Promise<MakeMessageResult | MakeMessageResult []>;
 }
 
-/* Cut this function in parts */
 
 export async function parseActionBody (msg: MessageRelaxed, isTestnet : boolean): Promise<string> 
 {

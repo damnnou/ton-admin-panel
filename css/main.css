@@ -107,6 +107,13 @@ button:disabled, .btn:disabled {
     font-weight: bold;
     flex-shrink: 0;
     color: black !important;
+    margin-right: 10px;
+}
+
+.pair_line {
+    display: flex;
+    /* justify-content: space-between;*/
+    margin-bottom: 2px;
 }
 
 #multisig_logoutButton {

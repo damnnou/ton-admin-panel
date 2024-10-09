@@ -5,7 +5,7 @@ import { ContractOpcodes } from "./amm/opCodes";
 import { packJettonOnchainMetadata, unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 
 import { contractDict } from "./contracts"
-import { Address, beginCell, Cell, contractAddress, MessageRelaxed, StateInit } from "@ton/core";
+import { Address, beginCell, Cell, contractAddress, MessageRelaxed, StateInit, toNano } from "@ton/core";
 import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
@@ -14,6 +14,13 @@ import { PoolV3Contract } from "./amm/PoolV3Contract"
 
 import { getJettonMetadata } from "./jettonCache"
 import { formatAddressAndUrl } from "./utils/utils";
+
+
+import { PTonMinterV2 } from "./amm/common/PTonMinterV2" 
+
+
+import { setDeployedJson } from "./index"
+import { pTonMinterAddress } from "./jettons";
 
 export class AMMOrders {
 
@@ -28,16 +35,16 @@ export class AMMOrders {
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     let buffer;
-                    buffer = Buffer.from(contractDict["PoolV3Contract"], "hex")
+                    buffer = Buffer.from(contractDict["PoolV3Contract"], "base64")
                     let poolCell : Cell = Cell.fromBoc(buffer)[0]
 
-                    buffer = Buffer.from(contractDict["RouterV3Contract"], "hex")
+                    buffer = Buffer.from(contractDict["RouterV3Contract"], "base64")
                     let routerCell : Cell = Cell.fromBoc(buffer)[0]
 
-                    buffer = Buffer.from(contractDict["AccountV3Contract"], "hex")
+                    buffer = Buffer.from(contractDict["AccountV3Contract"], "base64")
                     let accountCell : Cell = Cell.fromBoc(buffer)[0]
 
-                    buffer = Buffer.from(contractDict["PositionNFTV3Contract"], "hex")
+                    buffer = Buffer.from(contractDict["PositionNFTV3Contract"], "base64")
                     let positionCell : Cell = Cell.fromBoc(buffer)[0]
 
 
@@ -64,12 +71,19 @@ export class AMMOrders {
                             
                     console.log(`We would deploy router to ${routerAddress}`)
 
-                    return {
-                        toAddress: {address: routerAddress, isTestOnly : true, isBounceable: false},
+                    return [
+                    /* pTonWallet */
+                    {
+                        toAddress: {address: pTonMinterAddress, isTestOnly : IS_TESTNET, isBounceable: false},
+                        tonAmount: toNano(0.1),
+                        body: PTonMinterV2.messageDeployWallet({ownerAddress : routerAddress}, multisigAddress)
+                    },
+                    {
+                        toAddress: {address: routerAddress, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
                         init: routerStateInit,
                         body: beginCell().endCell()
-                    };
+                    }]
                 }
             },
 
@@ -84,7 +98,7 @@ export class AMMOrders {
                     
 
                     return {
-                        toAddress: {address: values.router.address, isTestOnly : true, isBounceable: false},
+                        toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
                         body: RouterV3Contract.changeAdminMessage(values.newAdmin.address)
                     };
@@ -180,7 +194,7 @@ export class AMMOrders {
                         toAddress: values.router,
                         tonAmount: values.amount,
                         body: msg_body
-                    };
+                    }
                 }
             },
 
@@ -287,22 +301,10 @@ export class AMMOrders {
             {
                 name: 'Change NFT Item',
                 fields: {
-                    pool: {
-                        name: 'Pool Address',
-                        type: 'Address'
-                    },
-                    activeFee: {
-                        name: 'Active Fee',
-                        type: 'BigInt'
-                    },
-                    protocolFee: {
-                        name: 'Protocol Fee',
-                        type: 'BigInt'
-                    },
-                    amount: {
-                        name: 'TON Amount',
-                        type: 'TON'
-                    },
+                    pool:        { name: 'Pool Address', type: 'Address' },
+                    activeFee:   { name: 'Active Fee',   type: 'BigInt'  },
+                    protocolFee: { name: 'Protocol Fee', type: 'BigInt'  },
+                    amount:      { name: 'TON Amount',   type: 'TON'     },
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     const msg_body = beginCell()
@@ -355,17 +357,43 @@ export class AMMOrders {
     {
 
         if (msg.init) {
-            const targetAddrS = await formatAddressAndUrl(msg.info.dest as Address, isTestnet)
+            const routerAddress = msg.info.dest as Address
+            const targetAddrS = await formatAddressAndUrl(routerAddress, isTestnet)
 
-            const routerCodeCell = msg.init.code.hash(0).toString("hex")
+            const routerCodeCell = msg.init.code
             const config : RouterV3ContractConfig = routerv3ContractCellToConfig(msg.init.data)
 
             const adminAddrS = await formatAddressAndUrl(config.adminAddress, isTestnet)
+            let pTonWallet : Cell = Cell.fromBoc(Buffer.from(contractDict["pTonWallet"], "base64"))[0]
+          
+            /* */           
+            const pTonMinter = PTonMinterV2.createFromAddress(pTonMinterAddress)
+            const provider0 = new MyNetworkProvider(pTonMinterAddress, isTestnet)
+            const pTonRouterWalletAddress = await  pTonMinter.getWalletAddress(provider0, routerAddress)
+
+            const addressList = {
+                router : routerAddress.toString(),   
+                pTon : {
+                    minter: pTonMinterAddress.toString(),
+                    wallet: pTonRouterWalletAddress.toString()
+                },
+                code_base64 : {
+                    router      : routerCodeCell             .toBoc().toString("base64"),
+                    pool        : config.poolv3_code         .toBoc().toString("base64"),
+                    account     : config.accountv3_code      .toBoc().toString("base64"),
+                    positionnft : config.position_nftv3_code .toBoc().toString("base64"),
+    
+                    pTonMinter  : contractDict["pTonMinter"],
+                    pTonWallet  : contractDict["pTonWallet"],           
+                }              
+            }
+    
+            setDeployedJson(JSON.stringify(addressList))
 
             return `Deploy contract to ${targetAddrS} <br>` + 
                 `Admin:  ${adminAddrS} <br>` + 
                 `<table>` +
-                `<tr><td>Router Code hash:  <td/><b><tt>0x${routerCodeCell}                                     </b></tt><br></td></tr>` +
+                `<tr><td>Router Code hash:  <td/><b><tt>0x${routerCodeCell.hash(0).toString("hex")}                                     </b></tt><br></td></tr>` +
                 `<tr><td>Pool Code hash:    <td/><b><tt>0x${config.poolv3_code.hash(0).toString("hex")}         </b></tt><br></td></tr>` +
                 `<tr><td>Account Code hash: <td/><b><tt>0x${config.accountv3_code.hash(0).toString("hex")}      </b></tt><br></td></tr>` +
                 `<tr><td>NFT Code hash:     <td/><b><tt>0x${config.position_nftv3_code.hash(0).toString("hex")} </b></tt><br></td></tr>` +
@@ -376,6 +404,14 @@ export class AMMOrders {
 
         const cell: Cell = msg.body
   
+        try {
+            let p = PTonMinterV2.unpackDeployWalletMessage(cell)
+            const ownerAddressS = await formatAddressAndUrl(p.owner, isTestnet)
+            return `Order to deploy pTon Wallet for <br/>` + 
+                   `Owner: ${ownerAddressS}`
+        } catch (e) {
+        }
+
         try {
             let p = RouterV3Contract.unpackChangeAdminMessage(cell)
             const newAdminS = await formatAddressAndUrl(p.newAdmin, isTestnet)

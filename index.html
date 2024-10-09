@@ -94,10 +94,10 @@
 </div>
 
 <div id="newOrderScreen" class="screen">
-    <div class="panel">
+    <div class="panel">              
         <div class="label">Order ID:</div>
         <input id="newOrder_orderId">
-
+        
         <div class="label">Order Type:</div>
         <select id="newOrder_typeInput">
         </select>
@@ -106,7 +106,7 @@
         </div>
 
         <div id="newOrder_summary">
-        </div>
+        </div>       
 
         <button id="newOrder_createButton">Create</button>
         <button id="newOrder_backButton">Back</button>
@@ -140,10 +140,12 @@
 
 <div id="orderScreen" class="screen">
     <div class="panel">
-        <div>
+        <div class="pair_line"> 
             <div class="label">Order ID:</div>
             <div id="order_id" class="value"></div>
-
+        </div>
+            
+        <div class="pair_line">         
             <div class="label">Order Address:</div>
             <div id="order_address" class="value"></div>
         </div>
@@ -153,24 +155,29 @@
 
         <div id="order_content">
 
-            <div>
+            <div class="pair_line">
                 <div class="label">TON Balance:</div>
                 <div id="order_tonBalance" class="value"></div>
             </div>
 
             <div>
-                <div class="label">Executed:</div>
-                <div id="order_executed" class="value"></div>
+                <div class="pair_line">
+                    <div class="label">Executed:</div>
+                    <div id="order_executed" class="value"></div>
+                </div>    
 
-                <div class="label">Approvals:</div>
-                <div id="order_approvals" class="value"></div>
+                <div class="pair_line">
+                    <div class="label">Approvals:</div>
+                    <div id="order_approvals" class="value"></div>
+                </div>    
 
                 <div class="label">Signers:</div>
-                <div id="order_signersList">
-                </div>
+                <div id="order_signersList"></div>
 
-                <div class="label">Expires At:</div>
-                <div id="order_expiresAt" class="value"></div>
+                <div class="pair_line">
+                    <div class="label">Expires At:</div>
+                    <div id="order_expiresAt" class="value"></div>
+                </div>    
             </div>
 
             <div id="order_actionsTitle" class="label">Actions:</div>
@@ -183,6 +190,7 @@
             <div id="order_approveNote">or just send 0.1 TON with "approve" text comment to order address.</div>
         </div>
 
+        <button id="order_downloadDeployed">Get deployed.json</button>        
         <button id="order_backButton">Back</button>
 
     </div>

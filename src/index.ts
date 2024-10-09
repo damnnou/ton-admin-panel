@@ -1,27 +1,20 @@
 import {Address, beginCell, Cell, fromNano, MessageRelaxed, SendMode, storeStateInit, toNano} from "@ton/core";
 import {THEME, TonConnectUI} from '@tonconnect/ui'
-import {
-    AddressInfo,
-    addressToString,
-    equalsMsgAddresses,
-    makeAddressLink,
-    sanitizeHTML,
-    validateUserFriendlyAddress
-} from "./utils/utils";
+import {AddressInfo, addressToString, equalsMsgAddresses, escapeHtml, makeAddressLink, sanitizeHTML, validateUserFriendlyAddress} from "./utils/utils";
 import {checkMultisig, LastOrder, MultisigInfo} from "./multisig/MultisigChecker";
 import {checkMultisigOrder, MultisigOrderInfo} from "./multisig/MultisigOrderChecker";
 import {LOCK_TYPES, LockType, lockTypeToDescription } from "./jetton/JettonMinter";
-import {Multisig} from "./multisig/Multisig";
+import {Action, Multisig} from "./multisig/Multisig";
 import {toUnits} from "./utils/units";
 import {checkJettonMinter} from "./jetton/JettonMinterChecker";
 import {sendToIndex} from "./utils/MyNetworkProvider";
 import {Order} from "./multisig/Order";
 
 
-import { AMOUNT_TO_SEND, DEFAULT_AMOUNT, FieldType, OrderType, parseActionBody, ValidatedValue } from "./orders"
+import { AMOUNT_TO_SEND, DEFAULT_AMOUNT, FieldType, MakeMessageResult, OrderType, parseActionBody, ValidatedValue } from "./orders"
 
 import {AMMOrders} from "./amm"
-import {JettonOrders} from "./jettons"
+import {jettonList, JettonOrders} from "./jettons"
 
 
 
@@ -735,13 +728,52 @@ const renderNewOrderFields = (orderTypeIndex: number): void => {
                     html += `<option value="${lockType}">${lockTypeToDescription(lockType)}</option>`;
                 }
                 html += `</select>`
-            } else {
-                html += `<input id="newOrder_${orderTypeIndex}_${fieldId}"  ${field.default ? 'value="' + sanitizeHTML(field.default) + '"' : '' }  >`
+            } 
+            if (field.type === 'Address'){
+
+                let inputName = `newOrder_${orderTypeIndex}_${fieldId}`
+                let selectName = inputName + "_s"
+
+                html += `<div class="pair_line">`    
+                html += `  <input id="${inputName}">`
+                html += `  <select id="${selectName}">`
+                for (let i = 0; i < jettonList.length; i++) {
+                    html += `<option value="${jettonList[i].name}">${jettonList[i].name}</option>`;
+                }
+                html += `  </select>`
+                html += `</div>`               
+                
+            }
+            else {
+                html += `<input id="newOrder_${orderTypeIndex}_${fieldId}"  ${field.default ? 'value="' + escapeHtml(field.default) + '"' : '' }  >`
             }
         }
     }
 
     $('#newOrder_fieldsContainer').innerHTML = html;
+    /* Link selects */
+
+    for (let fieldId in orderType.fields) {
+        if (! orderType.fields.hasOwnProperty(fieldId)) {
+            continue
+        }
+        const field = orderType.fields[fieldId];
+        if (field.type !== 'Address') {
+            continue
+        }
+        let inputName = `#newOrder_${orderTypeIndex}_${fieldId}`
+        let selectName = inputName + "_s"
+        $(selectName).addEventListener('change', (e) => {  
+            let name = ($(selectName) as HTMLSelectElement).value
+            let newValue = ""
+            for (let i = 0; i < jettonList.length; i++) {
+                if (jettonList[i].name == name)
+                    newValue = jettonList[i].minter
+            }
+
+            ($(inputName) as HTMLInputElement).value  = newValue
+        })
+    }
 }
 
 newOrderTypeSelect.addEventListener('change', (e) => {
@@ -884,7 +916,9 @@ $('#newOrder_createButton').addEventListener('click', async () => {
         }
     }
 
-    const messageParams = await orderType.makeMessage(values, currentMultisigInfo.address.address);
+    const messageParamsRes = await orderType.makeMessage(values, currentMultisigInfo.address.address);
+
+    const messageParams : MakeMessageResult[] = Array.isArray(messageParamsRes) ? messageParamsRes : [messageParamsRes]
 
     const myProposerIndex = currentMultisigInfo.proposers.findIndex(address => address.address.equals(myAddress));
     const mySignerIndex = currentMultisigInfo.signers.findIndex(address => address.address.equals(myAddress));
@@ -897,51 +931,62 @@ $('#newOrder_createButton').addEventListener('click', async () => {
 
     const isSigner = mySignerIndex > -1;
 
-    const toAddress = messageParams.toAddress;
-    const tonAmount = messageParams.tonAmount;
-    const payloadCell = messageParams.body;
-    const expireAt = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30; // 1 month
+    let actions : Action[] = []
+    let summary = ""
 
-    const innerMessage : MessageRelaxed = {
-        info: {
-            type: 'internal',
-            ihrDisabled: false,
-            bounce: true,
-            bounced: false,
-            dest: toAddress.address,
-            value: {
-                coins: tonAmount
-            },
-            ihrFee: 0n,
-            forwardFee: 0n,
-            createdLt: 0n,
-            createdAt: 0                    
-        },  
-        init: messageParams.init ?? undefined,
-        body: payloadCell
+    for (let [i, messageParam] of messageParams.entries() ) {
+        summary += `<div>Action: ${i}<div>`
+
+        const toAddress = messageParam.toAddress;
+        const tonAmount = messageParam.tonAmount;
+        const payloadCell = messageParam.body;
+
+        const innerMessage : MessageRelaxed = {
+            info: {
+                type: 'internal',
+                ihrDisabled: false,
+                bounce: true,
+                bounced: false,
+                dest: toAddress.address,
+                value: {
+                    coins: tonAmount
+                },
+                ihrFee: 0n,
+                forwardFee: 0n,
+                createdLt: 0n,
+                createdAt: 0                    
+            },  
+            init: messageParam.init ?? undefined,
+            body: payloadCell
+        }
+
+        actions.push({
+                type: 'transfer',
+                sendMode: SendMode.PAY_GAS_SEPARATELY,
+                message: innerMessage
+            })
+        summary += "<div>" +  (await parseActionBody(innerMessage, IS_TESTNET)) + "</div>"
+        
+        console.log({
+            toAddress,
+            tonAmount,
+            payloadCell,
+            orderId
+        })
+
     }
 
-    const actionsPacked = Multisig.packOrder([
-        {
-            type: 'transfer',
-            sendMode: SendMode.PAY_GAS_SEPARATELY,
-            message: innerMessage
-        }
-    ]);
+    const actionsPacked = Multisig.packOrder(actions);
+    const expireAt = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30; // 1 month
 
     const message = Multisig.newOrderMessage(actionsPacked, expireAt, isSigner, isSigner ? mySignerIndex : myProposerIndex, orderId, 0n)
     const messageBase64 = message.toBoc().toString('base64');
 
-    $('#newOrder_summary').innerHTML = 'Summary: <br/>' + (await parseActionBody(innerMessage, IS_TESTNET));
+    $('#newOrder_summary').innerHTML = 'Summary: <br/>' + summary;
 
-    console.log({
-        toAddress,
-        tonAmount,
-        payloadCell,
-        message,
-        orderId
-    })
-
+    /**/
+    console.log(message)
+    
     const multisigAddressString = currentMultisigAddress;
     const amount = AMOUNT_TO_SEND.toString();
 
@@ -958,6 +1003,27 @@ $('#newOrder_createButton').addEventListener('click', async () => {
     setNewOrderMode('confirm')
     updateNewOrderButtons(false);
 });
+
+let deployedJsonData = ""
+setDeployedJson("")
+
+export function downloadAsFile(data : string) {
+    let a = document.createElement("a");
+    let file = new Blob([data], {type: 'application/json'});
+    a.href = URL.createObjectURL(file);
+    a.download = "deployed.json";
+    a.click();
+}
+
+$('#order_downloadDeployed').addEventListener('click', () => { 
+    downloadAsFile(deployedJsonData)
+} )
+
+export function setDeployedJson(data : string ) {
+    deployedJsonData = data;
+    ($('#order_downloadDeployed') as HTMLButtonElement).disabled = (data == "");
+}
+
 
 $('#newOrder_backButton').addEventListener('click', () => {
     if (newOrderMode == 'fill') {
