@@ -365,10 +365,10 @@ export class AMMOrders {
             return `Deploy contract to ${targetAddrS} <br>` + 
                 `Admin:  ${adminAddrS} <br>` + 
                 `<table>` +
-                `<tr><td>Router Code hash:  <td/><b><tt>0x${routerCodeCell}  </tt><br></td></tr>` +
-                `<tr><td>Pool Code hash:    <td/><b><tt>0x${config.poolv3_code.hash(0).toString("hex")}    </tt><br></td></tr>` +
-                `<tr><td>Account Code hash: <td/><b><tt>0x${config.accountv3_code.hash(0).toString("hex")} </tt><br></td></tr>` +
-                `<tr><td>NFT Code hash:     <td/><b><tt>0x${config.position_nftv3_code.hash(0).toString("hex")}     </tt><br></td></tr>` +
+                `<tr><td>Router Code hash:  <td/><b><tt>0x${routerCodeCell}                                     </b></tt><br></td></tr>` +
+                `<tr><td>Pool Code hash:    <td/><b><tt>0x${config.poolv3_code.hash(0).toString("hex")}         </b></tt><br></td></tr>` +
+                `<tr><td>Account Code hash: <td/><b><tt>0x${config.accountv3_code.hash(0).toString("hex")}      </b></tt><br></td></tr>` +
+                `<tr><td>NFT Code hash:     <td/><b><tt>0x${config.position_nftv3_code.hash(0).toString("hex")} </b></tt><br></td></tr>` +
                 `</table>` +
                 `Nonce: ${config.nonce}`
 
