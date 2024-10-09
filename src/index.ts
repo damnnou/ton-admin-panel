@@ -20,8 +20,8 @@ import {Order} from "./multisig/Order";
 
 import { AMOUNT_TO_SEND, DEFAULT_AMOUNT, FieldType, OrderType, parseActionBody, ValidatedValue } from "./orders"
 
-import {ammOrderTypes} from "./amm"
-import {jettonOrderTypes} from "./jettons"
+import {AMMOrders} from "./amm"
+import {JettonOrders} from "./jettons"
 
 
 
@@ -703,8 +703,8 @@ const checkExistingOrderId = async (orderId: bigint): Promise<ValidatedValue> =>
 
 
 let orderTypes: OrderType[] = []
-orderTypes = orderTypes.concat(ammOrderTypes(IS_TESTNET))
-orderTypes = orderTypes.concat(jettonOrderTypes(IS_TESTNET))
+orderTypes = orderTypes.concat(AMMOrders   .getOrderTypes(IS_TESTNET))
+orderTypes = orderTypes.concat(JettonOrders.getOrderTypes(IS_TESTNET))
 
 const getOrderTypesHTML = (): string => {
     let html = '';
@@ -961,9 +961,10 @@ $('#newOrder_createButton').addEventListener('click', async () => {
 
 $('#newOrder_backButton').addEventListener('click', () => {
     if (newOrderMode == 'fill') {
-        showScreen('multisigScreen');
+        showScreen('multisigScreen')
     } else {
-        setNewOrderMode('fill');
+        $('#newOrder_summary').innerHTML = ''
+        setNewOrderMode('fill')
     }
 });
 

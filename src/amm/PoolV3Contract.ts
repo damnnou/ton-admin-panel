@@ -342,16 +342,16 @@ export class PoolV3Contract implements Contract {
         if (setControl == 0) { s.loadUint(2) }
 
         const setTickSpacing = s.loadUint(1)
-        let tickSpacing = s.loadUint(24) 
-        if (setTickSpacing == 0) tickSpacing = undefined
+        let tickSpacingV = s.loadUint(24) 
+        let tickSpacing = (setTickSpacing != 0) ? tickSpacingV : undefined
 
         const setPrice = s.loadUint(1)
-        let sqrtPriceX96 = s.loadUintBig(160) 
-        if (setPrice == 0) sqrtPriceX96 = undefined
+        let sqrtPriceX96V = s.loadUintBig(160) 
+        let sqrtPriceX96 = (setPrice != 0) ? sqrtPriceX96V : undefined
 
         const setActive = s.loadUint(1)
-        let activate_pool = (s.loadUint(1) == 1)
-        if (setActive == 0) activate_pool = undefined
+        let activate_poolV = (s.loadUint(1) == 1)
+        let activate_pool = (setActive != 0) ? activate_poolV : undefined
 
         let nftContentPacked = s.loadRef()
         let nftItemContentPacked = s.loadRef()
@@ -697,14 +697,15 @@ export class PoolV3Contract implements Contract {
         return { amount0 : stack.readBigNumber(), amount1: stack.readBigNumber(), mintErrors : stack.readNumber() };
     }
 
-
-    async getSwapEstimate(provider: ContractProvider, zeroForOne: boolean, amount: bigint, sqrtPriceLimitX96: bigint )
+    async getSwapEstimate(provider: ContractProvider, zeroForOne: boolean, amount: bigint, sqrtPriceLimitX96: bigint, minOutAmount : bigint = 0n, gasLimit : bigint = 0n )
     {
-        const { stack } = await provider.get("getSwapEstimate", 
+        const { stack } = await provider.get("getSwapEstimateGas", 
         [
             {type: 'int', value: BigInt(zeroForOne ? 1 : 0)},
             {type: 'int', value: BigInt(amount)},
-            {type: 'int', value: BigInt(sqrtPriceLimitX96)}
+            {type: 'int', value: BigInt(sqrtPriceLimitX96)},
+            {type: 'int', value: BigInt(minOutAmount)},
+            {type: 'int', value: BigInt(gasLimit)}
         ]);
         return { amount0 : stack.readBigNumber(), amount1: stack.readBigNumber() };
     }

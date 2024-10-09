@@ -1,9 +1,9 @@
-import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from "@ton/core";
+import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode, Slice } from "@ton/core";
 import { ContractOpcodes, OpcodesLookup } from "./opCodes";
 import { ContractMessageMeta, DummyCell } from "./DummyCell";
 import { nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract";
 
-/** Inital data structures and settings **/
+/** Initial data structures and settings **/
 export type RouterV3ContractConfig = {    
     active : boolean,
     adminAddress : Address,  
@@ -26,6 +26,19 @@ export function routerv3ContractConfigToCell(config: RouterV3ContractConfig): Ce
     .endCell()    
 }
 
+export function routerv3ContractCellToConfig(c: Cell): RouterV3ContractConfig {
+    let s : Slice = c.beginParse()
+
+    const active : boolean = (s.loadUint(1) == 1)
+    const adminAddress : Address = s.loadAddress()
+    const seqno = s.loadUintBig(64)
+    const poolv3_code         : Cell = s.loadRef()
+    const accountv3_code      : Cell = s.loadRef()
+    const position_nftv3_code : Cell = s.loadRef()       
+    const nonce : bigint      = s.loadUintBig(64)
+
+    return {active, adminAddress, poolv3_code, accountv3_code, position_nftv3_code, nonce}
+}
 
 export class RouterV3Contract implements Contract {
     constructor(
@@ -101,7 +114,7 @@ export class RouterV3Contract implements Contract {
 
         nftContentPacked? : Cell,
         nftItemContentPacked? : Cell
-    } 
+    }
     {
         let s = body.beginParse()
         const op       = s.loadUint(32)
