@@ -19,6 +19,12 @@ export const jettonList = [
         "minter": "kQBO-T0NCODKT87McOAK2Vb-Whx_jLFHU5NCDBJYkBcsiuTm"
     },
     {
+        "name": "pTon",
+        "minter": pTonMinterAddress.toString()
+    },
+
+
+    {
       "name": "ALG_USD",
       "minter": "EQD8Hzc0JD808OAnCsnCea2_Fq4cNAiAhGo5KaXM-zt8HV5Q"
     },

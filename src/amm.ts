@@ -108,7 +108,7 @@ export class AMMOrders {
             {
                 name: 'Deploy Pool',
                 fields: {
-                    amount: { name: 'TON Amount',     type: 'TON'     , default : "0.4" },
+                    amount: { name: 'TON Amount',     type: 'TON'     , default : "0.2" },
                     router: { name: 'Router Address', type: 'Address' },
 
                     jetton0minter: { name: 'Jetton 0 minter', type: 'Address' },
@@ -444,30 +444,40 @@ export class AMMOrders {
 
     
             return `Create New Pool For<br/>` + 
-            `  Minter1: ${jetton0MinterS} &nbsp;<span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]}</span><br/>` + 
-            `  Wallet1: ${jetton0WalletS}<br/>` + 
-    
-            `  Minter2: ${jetton1MinterS} &nbsp;<span><img src="${metadata1['image']}" width='24px' height='24px' > ${metadata1["symbol"]} - ${metadata1["name"]}</span><br/>` + 
-            `  Wallet2: ${jetton1WalletS}<br/>` + 
+            `  <b>Minter1:</b> ${jetton0MinterS} &nbsp;<span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]}</span><br/>` + 
+            `  <b>Wallet1:</b> ${jetton0WalletS}<br/>` + 
+            `  <br/>` +
+            `  <b>Minter2:</b> ${jetton1MinterS} &nbsp;<span><img src="${metadata1['image']}" width='24px' height='24px' > ${metadata1["symbol"]} - ${metadata1["name"]}</span><br/>` + 
+            `  <b>Wallet2:</b> ${jetton1WalletS}<br/>` + 
     
             `  Tick Spacing : ${p.tickSpacing}<br/>` +
             `  Price : ${p.sqrtPriceX96} ( 1&nbsp;${logicalJetton0} = ${getApproxFloatPrice(p.sqrtPriceX96)}&nbsp;${logicalJetton1} ) <br/>` +
     
-            `  Controller :  ${controllerS}<br/>` + 
+            `  Controller :  ${controllerS}<br/>` +           
             `  NFT Collection:  <br/>`  + 
+            `  <div><img src="${nftUnpack["cover_image"]}"  width="256px"></div>` +            
+            `  <div class="pair_line_s">`+
             `  <ol>`  + 
                 `  <li> ${nftUnpack["name"]} </li>`  + 
                 `  <li> ${nftUnpack["description"]} </li>`  + 
                 `  <li> <a href="${nftUnpack["image"]}"      >${nftUnpack["image"]}      </a> </li>`  + 
                 `  <li> <a href="${nftUnpack["cover_image"]}">${nftUnpack["cover_image"]}</a> </li>`  + 
             `  </ol>` +
+            `  <div><img src="${nftUnpack["image"]}" width="128px" ></div>` +
+            `  </div> `+
+            `          `+
+            `  <div class="pair_line_s">`+
+            `  <div>` +
             `  NFT Item:  <br/>`  + 
             `  <ol>`  + 
                 `  <li> ${nftItemUnpack["name"]} </li>`  + 
                 `  <li> ${nftItemUnpack["description"]} </li>`  + 
                 `  <li> <a href="${nftItemUnpack["image"]}" >${nftItemUnpack["image"]} </a> </li>`  + 
                 `  <li> ${nftItemUnpack["attributes"]} </li>`  + 
-            `  </ol>`;
+            `  </ol>` +
+            `  </div>` +            
+            `  <div><img src="${nftItemUnpack["image"]}" width="128px" ></div>` +
+            `  </div> `;
         } catch (e) {
         }
     

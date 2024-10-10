@@ -116,6 +116,12 @@ button:disabled, .btn:disabled {
     margin-bottom: 2px;
 }
 
+.pair_line_s {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2px;
+}
+
 #multisig_logoutButton {
     padding-left: 0;
     margin-bottom: 30px;
