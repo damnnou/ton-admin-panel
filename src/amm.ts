@@ -437,6 +437,11 @@ export class AMMOrders {
     
             const nftUnpack     = unpackJettonOnchainMetadata(p.nftContentPacked, false)
             const nftItemUnpack = unpackJettonOnchainMetadata(p.nftItemContentPacked, false)
+
+            let order = PoolV3Contract.orderJettonId(p.jetton0WalletAddr, p.jetton1WalletAddr)
+            let logicalJetton0 = order ? metadata0["symbol"] : metadata1["symbol"]
+            let logicalJetton1 = order ? metadata1["symbol"] : metadata0["symbol"]
+
     
             return `Create New Pool For<br/>` + 
             `  Minter1: ${jetton0MinterS} &nbsp;<span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]}</span><br/>` + 
@@ -446,7 +451,7 @@ export class AMMOrders {
             `  Wallet2: ${jetton1WalletS}<br/>` + 
     
             `  Tick Spacing : ${p.tickSpacing}<br/>` +
-            `  Price : ${p.sqrtPriceX96} (${getApproxFloatPrice(p.sqrtPriceX96)}) <br/>` +
+            `  Price : ${p.sqrtPriceX96} ( 1&nbsp;${logicalJetton0} = ${getApproxFloatPrice(p.sqrtPriceX96)}&nbsp;${logicalJetton1} ) <br/>` +
     
             `  Controller :  ${controllerS}<br/>` + 
             `  NFT Collection:  <br/>`  + 

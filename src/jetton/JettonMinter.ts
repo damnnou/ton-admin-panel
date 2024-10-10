@@ -415,7 +415,9 @@ export class JettonMinter implements Contract {
         assert(res.stack.remaining === 5, "invalid get_jetton_data result");
         let totalSupply = res.stack.readBigNumber();
         let mintable = res.stack.readBoolean();
-        let adminAddress = res.stack.readAddress();
+        
+        let adminAddress = res.stack.readAddressOpt();
+
         let content = res.stack.readCell();
         let walletCode = res.stack.readCell();
         return {
