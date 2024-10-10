@@ -30,7 +30,7 @@ export class AMMOrders {
             {
                 name: 'Deploy Router',
                 fields: {
-                    amount: { name: 'TON Amount', type: 'TON', default : '0.4' },
+                    amount: { name: 'TON Amount', type: 'TON', default : '0.1' },
                     nonce : { name: 'Nonce', type: 'BigInt' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
@@ -91,7 +91,7 @@ export class AMMOrders {
                 name: 'Change Router Admin',
                 fields: {
                     router   : { name: 'Router', type: 'Address' },
-                    amount   : { name: 'TON Amount', type: 'TON', default : '0.4' },
+                    amount   : { name: 'TON Amount', type: 'TON', default : '0.1' },
                     newAdmin : { name: 'New Admin', type: 'Address' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
@@ -393,7 +393,7 @@ export class AMMOrders {
             return `Deploy contract to ${targetAddrS} <br>` + 
                 `Admin:  ${adminAddrS} <br>` + 
                 `<table>` +
-                `<tr><td>Router Code hash:  <td/><b><tt>0x${routerCodeCell.hash(0).toString("hex")}                                     </b></tt><br></td></tr>` +
+                `<tr><td>Router Code hash:  <td/><b><tt>0x${routerCodeCell.hash(0).toString("hex")}             </b></tt><br></td></tr>` +
                 `<tr><td>Pool Code hash:    <td/><b><tt>0x${config.poolv3_code.hash(0).toString("hex")}         </b></tt><br></td></tr>` +
                 `<tr><td>Account Code hash: <td/><b><tt>0x${config.accountv3_code.hash(0).toString("hex")}      </b></tt><br></td></tr>` +
                 `<tr><td>NFT Code hash:     <td/><b><tt>0x${config.position_nftv3_code.hash(0).toString("hex")} </b></tt><br></td></tr>` +

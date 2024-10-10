@@ -62,11 +62,6 @@ export const jettonList = [
       "wallet": "EQBdJa4UZ2YEcAQNgySLnbJB8HSt-EHVdBWKKeU-MpVE2z9P"
     },
     {
-      "minter": "EQBVdCFNMz19_KKpXS8elAMzf5xcxuEtuF-RWh2ALmfqsyDh",
-      "name": "F18",
-      "wallet": "EQBdJa4UZ2YEcAQNgySLnbJB8HSt-EHVdBWKKeU-MpVE2z9P"
-    },
-    {
       "minter": "EQD00XKMrx_6OaGfgOeMUl0pe0rvTQyuxi85pPbTAueQ70mB",
       "name": "F6",
       "wallet": "EQCGMuLk9pCi4llVL9xpwXE478crHowsnVOOiDjJgdCJU3DY"

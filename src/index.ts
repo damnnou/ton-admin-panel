@@ -737,6 +737,7 @@ const renderNewOrderFields = (orderTypeIndex: number): void => {
                 html += `<div class="pair_line">`    
                 html += `  <input id="${inputName}">`
                 html += `  <select id="${selectName}">`
+                html += `<option value="---">---</option>`;
                 for (let i = 0; i < jettonList.length; i++) {
                     html += `<option value="${jettonList[i].name}">${jettonList[i].name}</option>`;
                 }
@@ -771,7 +772,9 @@ const renderNewOrderFields = (orderTypeIndex: number): void => {
                     newValue = jettonList[i].minter
             }
 
-            ($(inputName) as HTMLInputElement).value  = newValue
+            if (newValue != "") {
+                ($(inputName) as HTMLInputElement).value  = newValue
+            }
         })
     }
 }
