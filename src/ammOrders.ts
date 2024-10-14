@@ -4,7 +4,7 @@ import { RouterV3Contract, routerv3ContractCellToConfig, RouterV3ContractConfig,
 import { ContractOpcodes } from "./amm/opCodes";
 import { packJettonOnchainMetadata, unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 
-import { contractDict } from "./contracts"
+import { ContractDict } from "./contracts"
 import { Address, beginCell, Cell, contractAddress, fromNano, MessageRelaxed, StateInit, toNano } from "@ton/core";
 import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
@@ -22,6 +22,20 @@ import { PTonMinterV2 } from "./amm/common/PTonMinterV2"
 import { setDeployedJson } from "./index"
 import { getPTonMinterAddress } from "./deployed";
 
+
+function xorBuffers(buffers: Buffer[]): Buffer {
+    const length = buffers[0].length;
+    const result = Buffer.alloc(length);
+  
+    for (let i = 0; i < length; i++) {
+        // Perform XOR for each corresponding byte from the buffers
+        for (let j = 0; j < buffers.length; j++)
+            result[i] = result[i] ^ buffers[j][i]
+    }  
+    return result;
+}
+ 
+
 export class AMMOrders {
 
     static getOrderTypes( IS_TESTNET : boolean ) : OrderType[]  
@@ -37,16 +51,16 @@ export class AMMOrders {
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     let buffer;
-                    buffer = Buffer.from(contractDict["PoolV3Contract"], "base64")
+                    buffer = Buffer.from(ContractDict["PoolV3Contract"], "base64")
                     let poolCell : Cell = Cell.fromBoc(buffer)[0]
 
-                    buffer = Buffer.from(contractDict["RouterV3Contract"], "base64")
+                    buffer = Buffer.from(ContractDict["RouterV3Contract"], "base64")
                     let routerCell : Cell = Cell.fromBoc(buffer)[0]
 
-                    buffer = Buffer.from(contractDict["AccountV3Contract"], "base64")
+                    buffer = Buffer.from(ContractDict["AccountV3Contract"], "base64")
                     let accountCell : Cell = Cell.fromBoc(buffer)[0]
 
-                    buffer = Buffer.from(contractDict["PositionNFTV3Contract"], "base64")
+                    buffer = Buffer.from(ContractDict["PositionNFTV3Contract"], "base64")
                     let positionCell : Cell = Cell.fromBoc(buffer)[0]
 
 
@@ -371,7 +385,7 @@ export class AMMOrders {
             const config : RouterV3ContractConfig = routerv3ContractCellToConfig(msg.init.data)
 
             const adminAddrS = await formatAddressAndUrl(config.adminAddress, isTestnet)
-            let pTonWallet : Cell = Cell.fromBoc(Buffer.from(contractDict["pTonWallet"], "base64"))[0]
+            let pTonWallet : Cell = Cell.fromBoc(Buffer.from(ContractDict["pTonWallet"], "base64"))[0]
           
             /* */           
             const pTonMinterAddress = getPTonMinterAddress(isTestnet)
@@ -391,17 +405,20 @@ export class AMMOrders {
                     account     : config.accountv3_code      .toBoc().toString("base64"),
                     positionnft : config.position_nftv3_code .toBoc().toString("base64"),
     
-                    pTonMinter  : contractDict["pTonMinter"],
-                    pTonWallet  : contractDict["pTonWallet"],           
+                    pTonMinter  : ContractDict["pTonMinter"],
+                    pTonWallet  : ContractDict["pTonWallet"],           
                 }              
             }
     
             setDeployedJson(JSON.stringify(addressList))
 
+            const totalHash = xorBuffers([routerCodeCell.hash(0), config.poolv3_code.hash(0), config.accountv3_code.hash(0), config.position_nftv3_code.hash(0)])
             return  `Spend ${value} TON <br/>` +            
                 `Deploy contract to ${targetAddrS} <br>` + 
                 `Admin:  ${adminAddrS} <br>` + 
                 `<table>` +
+                `<tr><td>TONCO Release hash:  <td/><b><tt><font color="red">0x${totalHash.toString("hex")}</font></b></tt><br></td></tr>` +
+                
                 `<tr><td>Router Code hash:  <td/><b><tt>0x${routerCodeCell.hash(0).toString("hex")}             </b></tt><br></td></tr>` +
                 `<tr><td>Pool Code hash:    <td/><b><tt>0x${config.poolv3_code.hash(0).toString("hex")}         </b></tt><br></td></tr>` +
                 `<tr><td>Account Code hash: <td/><b><tt>0x${config.accountv3_code.hash(0).toString("hex")}      </b></tt><br></td></tr>` +
