@@ -15,12 +15,12 @@ import { PoolV3Contract } from "./amm/PoolV3Contract"
 import { getJettonMetadata } from "./jettonCache"
 import { formatAddressAndUrl } from "./utils/utils";
 
-
 import { PTonMinterV2 } from "./amm/common/PTonMinterV2" 
-
 
 import { setDeployedJson } from "./index"
 import { getPTonMinterAddress } from "./deployed";
+
+import { getEmojiHash } from "./utils/visualHash"
 
 
 function xorBuffers(buffers: Buffer[]): Buffer {
@@ -42,7 +42,7 @@ export class AMMOrders {
     {
         return [
             {
-                name: 'Deploy Router',
+                name: `Deploy Router v=${ContractDict.emojiHash}`,
                 fields: {
                     amountTW: { name: 'TON for pTon Wallet Deploy', type: 'TON', default : '0.05' },
                     amountRD: { name: 'TON Amount for Router'     , type: 'TON', default : '0.08' },
@@ -413,10 +413,13 @@ export class AMMOrders {
             setDeployedJson(JSON.stringify(addressList))
 
             const totalHash = xorBuffers([routerCodeCell.hash(0), config.poolv3_code.hash(0), config.accountv3_code.hash(0), config.position_nftv3_code.hash(0)])
+            let shortHash = BigInt("0x" + totalHash.toString('hex')) % (2n ** 42n)
+            const emojiHash = getEmojiHash(shortHash)
             return  `Spend ${value} TON <br/>` +            
                 `Deploy contract to ${targetAddrS} <br>` + 
                 `Admin:  ${adminAddrS} <br>` + 
                 `<table>` +
+                `<tr><td>Emoji hash:          <td/><font size="10">${emojiHash}</font><br></td></tr>` +
                 `<tr><td>TONCO Release hash:  <td/><b><tt><font color="red">0x${totalHash.toString("hex")}</font></b></tt><br></td></tr>` +
                 
                 `<tr><td>Router Code hash:  <td/><b><tt>0x${routerCodeCell.hash(0).toString("hex")}             </b></tt><br></td></tr>` +
