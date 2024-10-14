@@ -84,6 +84,10 @@ export const jettonListTestnet = [
 
   export const jettonListMainnet = [ 
     {
+        "name": "Router:Current",
+        "minter": "EQCJ-t0nc_Bv4gmgRIJEJD5DEQDs8zt8C7nxMS2hAasy_tj6"
+    },
+    {
         "name": "pTon",
         "minter": getPTonMinterAddress(false).toString()
     }, 

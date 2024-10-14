@@ -176,7 +176,7 @@ export class AMMOrders {
                     let poolStringName = `${metadata0["symbol"]}-${metadata1["symbol"]}`
                     let nftContentToPack : { [s: string]: string | undefined } =     {  
                         name   : "Pool Minter:" + poolStringName,
-                        description : "TONCO Pool LP Minter for ", 
+                        description : "TONCO Pool LP Minter for " + poolStringName, 
                         cover_image : values.nftCoverPath, 
                         image: values.nftImagePath 
                     }
