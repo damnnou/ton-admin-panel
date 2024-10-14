@@ -13,8 +13,9 @@ import {Order} from "./multisig/Order";
 
 import { AMOUNT_TO_SEND, DEFAULT_AMOUNT, FieldType, MakeMessageResult, OrderType, parseActionBody, ValidatedValue } from "./orders"
 
-import {AMMOrders} from "./amm"
-import {jettonList, JettonOrders} from "./jettons"
+import {AMMOrders} from "./ammOrders"
+import {JettonOrders} from "./jettonOrders"
+import {getJettonList} from "./deployed"
 
 
 
@@ -715,6 +716,8 @@ const renderNewOrderFields = (orderTypeIndex: number): void => {
     const orderType = orderTypes[orderTypeIndex];
 
     let html = '';
+
+    const jettonList = getJettonList(IS_TESTNET)
 
     for (let fieldId in orderType.fields) {
         if (orderType.fields.hasOwnProperty(fieldId)) {

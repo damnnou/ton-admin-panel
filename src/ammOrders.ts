@@ -5,7 +5,7 @@ import { ContractOpcodes } from "./amm/opCodes";
 import { packJettonOnchainMetadata, unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 
 import { contractDict } from "./contracts"
-import { Address, beginCell, Cell, contractAddress, MessageRelaxed, StateInit, toNano } from "@ton/core";
+import { Address, beginCell, Cell, contractAddress, fromNano, MessageRelaxed, StateInit, toNano } from "@ton/core";
 import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
@@ -20,7 +20,7 @@ import { PTonMinterV2 } from "./amm/common/PTonMinterV2"
 
 
 import { setDeployedJson } from "./index"
-import { pTonMinterAddress } from "./jettons";
+import { getPTonMinterAddress } from "./deployed";
 
 export class AMMOrders {
 
@@ -30,7 +30,9 @@ export class AMMOrders {
             {
                 name: 'Deploy Router',
                 fields: {
-                    amount: { name: 'TON Amount', type: 'TON', default : '0.1' },
+                    amountTW: { name: 'TON for pTon Wallet Deploy', type: 'TON', default : '0.05' },
+                    amountRD: { name: 'TON Amount for Router'     , type: 'TON', default : '0.08' },
+                    
                     nonce : { name: 'Nonce', type: 'BigInt' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
@@ -74,13 +76,13 @@ export class AMMOrders {
                     return [
                     /* pTonWallet */
                     {
-                        toAddress: {address: pTonMinterAddress, isTestOnly : IS_TESTNET, isBounceable: false},
-                        tonAmount: toNano(0.1),
+                        toAddress: {address: getPTonMinterAddress(IS_TESTNET), isTestOnly : IS_TESTNET, isBounceable: false},
+                        tonAmount: values.amountTW,
                         body: PTonMinterV2.messageDeployWallet({ownerAddress : routerAddress}, multisigAddress)
                     },
                     {
                         toAddress: {address: routerAddress, isTestOnly : IS_TESTNET, isBounceable: false},
-                        tonAmount: values.amount,
+                        tonAmount: values.amountRD,
                         init: routerStateInit,
                         body: beginCell().endCell()
                     }]
@@ -355,6 +357,11 @@ export class AMMOrders {
 
     static async parseActionBody (msg: MessageRelaxed, isTestnet : boolean): Promise<string> 
     {
+        let value = "?"
+        if (msg.info.type == 'internal') {
+            value = fromNano(msg.info.value.coins)
+        }
+
 
         if (msg.init) {
             const routerAddress = msg.info.dest as Address
@@ -367,6 +374,7 @@ export class AMMOrders {
             let pTonWallet : Cell = Cell.fromBoc(Buffer.from(contractDict["pTonWallet"], "base64"))[0]
           
             /* */           
+            const pTonMinterAddress = getPTonMinterAddress(isTestnet)
             const pTonMinter = PTonMinterV2.createFromAddress(pTonMinterAddress)
             const provider0 = new MyNetworkProvider(pTonMinterAddress, isTestnet)
             const pTonRouterWalletAddress = await  pTonMinter.getWalletAddress(provider0, routerAddress)
@@ -390,7 +398,8 @@ export class AMMOrders {
     
             setDeployedJson(JSON.stringify(addressList))
 
-            return `Deploy contract to ${targetAddrS} <br>` + 
+            return  `Spend ${value} TON <br/>` +            
+                `Deploy contract to ${targetAddrS} <br>` + 
                 `Admin:  ${adminAddrS} <br>` + 
                 `<table>` +
                 `<tr><td>Router Code hash:  <td/><b><tt>0x${routerCodeCell.hash(0).toString("hex")}             </b></tt><br></td></tr>` +
@@ -407,7 +416,9 @@ export class AMMOrders {
         try {
             let p = PTonMinterV2.unpackDeployWalletMessage(cell)
             const ownerAddressS = await formatAddressAndUrl(p.owner, isTestnet)
-            return `Order to deploy pTon Wallet for <br/>` + 
+
+            return `Spend ${value} TON <br/>` +
+                   `Order to deploy pTon Wallet for <br/>` + 
                    `Owner: ${ownerAddressS}`
         } catch (e) {
         }

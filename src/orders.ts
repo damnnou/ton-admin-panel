@@ -1,8 +1,8 @@
 import { Address, Cell, fromNano, MessageRelaxed, StateInit, toNano } from "@ton/core";
 import { AddressInfo, assert, formatAddressAndUrl, sanitizeHTML } from "./utils/utils";
 
-import { AMMOrders } from "./amm";
-import { JettonOrders } from "./jettons";
+import { AMMOrders } from "./ammOrders";
+import { JettonOrders } from "./jettonOrders";
 
 export const AMOUNT_TO_SEND = toNano('0.2'); // 0.2 TON
 export const DEFAULT_AMOUNT = toNano('0.1'); // 0.1 TON
