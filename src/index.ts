@@ -1017,9 +1017,10 @@ export function downloadAsFile(data : string) {
     let a = document.createElement("a");
     let file = new Blob([data], {type: 'application/json'});
     a.href = URL.createObjectURL(file);
-    a.download = "deployed.json";
+    a.download = IS_TESTNET ? "deployed_testnet.json" : "deployed.json"
     a.click();
 }
+$('#order_downloadDeployed').innerHTML = IS_TESTNET ? "deployed_testnet.json" : "deployed.json"
 
 $('#order_downloadDeployed').addEventListener('click', () => { 
     downloadAsFile(deployedJsonData)

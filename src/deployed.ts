@@ -23,7 +23,7 @@ export const jettonListTestnet = [
     /* That is a hack */
     {
         "name": "Router:Current",
-        "minter": "kQBO-T0NCODKT87McOAK2Vb-Whx_jLFHU5NCDBJYkBcsiuTm"
+        "minter": "0QDk_t0nc0hpuEFn4Q83E0Gml30oMfjVKVIQf0bpHGo-6Kak"
     },
     {
         "name": "pTon",
@@ -85,7 +85,7 @@ export const jettonListTestnet = [
   export const jettonListMainnet = [ 
     {
         "name": "Router:Current",
-        "minter": "EQCJ-t0nc_Bv4gmgRIJEJD5DEQDs8zt8C7nxMS2hAasy_tj6"
+        "minter": "EQDr-T0ncOC4YkKXTRVk5tRV2izh2jTOpQRyRUs_8DyfOfab"
     },
     {
         "name": "pTon",
