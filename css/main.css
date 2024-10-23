@@ -296,6 +296,19 @@ button:disabled, .btn:disabled {
     justify-content: center;
 }
 
+.jsoncode {
+    font-family: monospace;  /* Ensures a code-friendly font */
+    line-height: 1.0;  /* Adjusts line spacing (default is typically 1.2 or 1.5) */
+    white-space: pre;  /* Preserves whitespace and line breaks */
+    display: block;  /* Ensures code block layout */
+    background-color: #f5f5f5;  /* Light background to distinguish code */
+    padding: 10px;  /* Padding for readability */
+    border: 1px solid #ddd;  /* Light border around code */
+    border-radius: 5px;  /* Optional rounded corners */
+    margin: 10px 0;  /* Adds space around the block */
+    font-size: 14px;  /* Adjust font size to your liking */
+}
+
 /* new multisig */
 
 .line {

@@ -10,7 +10,7 @@ import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
 import { encodePriceSqrt, FEE_DENOMINATOR, getApproxFloatPrice } from "./amm/frontmath/frontMath"
-import { PoolV3Contract } from "./amm/PoolV3Contract"
+import { PoolV3Contract, poolv3StateInitConfig } from "./amm/PoolV3Contract"
 
 import { getJettonMetadata } from "./jettonCache"
 import { formatAddressAndUrl } from "./utils/utils";
@@ -140,7 +140,7 @@ export class AMMOrders {
                     nftDescription : { name: 'NFT description(empty for default)', type: 'String' },
                     nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-astro.png"},
                     nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-cover.jpeg"},
-                    nftItemAttr    : { name: 'NFT Item Attributes', type: 'String', default: '[ {"trait_type": "Brand", "value": "TONCO" } ]'},
+                    nftItemAttr    : { name: 'NFT Item Attributes (empty for default)', type: 'String'},
 
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
@@ -180,14 +180,37 @@ export class AMMOrders {
                         cover_image : values.nftCoverPath, 
                         image: values.nftImagePath 
                     }
+
+                    const config = poolv3StateInitConfig(
+                        jetton0Wallet, 
+                        jetton1Wallet,
+                        /* Fix this. Should use codes from the blockchain */
+                        Cell.fromBoc(Buffer.from(ContractDict.AccountV3Contract    , "base64"))[0], 
+                        Cell.fromBoc(Buffer.from(ContractDict.PositionNFTV3Contract, "base64"))[0],
+                        values.router.address
+                    )
+
+                    const poolContract = PoolV3Contract.createFromConfig(config, Cell.fromBoc(Buffer.from(ContractDict.PoolV3Contract, "base64"))[0])
                 
+                    const nftDescr = "This NFT represents a liquidity position in a TONCO "+ poolStringName +" pool. The owner of this NFT can modify or claim the rewards.\n" + 
+                    `Pool Address: ${poolContract.address}\n` + 
+                    `${metadata0["symbol"]} Master Address: ${jetton0MinterAddress.toString()}\n` + 
+                    `${metadata1["symbol"]} Master Address: ${jetton1MinterAddress.toString()}\n`
+
+                    //const nftDescr = "LP Position that corresponds to your liquidity in the pool " + poolStringName
+                    const attributes = [ 
+                        {"trait_type": "DEX", "value": "TONCO" },
+                    //    {"trait_type": "jetton0", "value": "TONCO" },
+                    //    {"trait_type": "jetton1", "value": "TONCO" },
+                    ]
+
                     const nftContentPacked: Cell = packJettonOnchainMetadata(nftContentToPack)
                 
                     const nftItemContentToPack : { [s: string]: string | undefined } =     {  
                         name        : values.nftName        != "" ? values.nftName        : "Pool " + poolStringName +" Position", 
-                        description : values.nftDescription != "" ? values.nftDescription : "LP Position that corresponds to your liquidity in the pool " + poolStringName, 
+                        description : values.nftDescription != "" ? values.nftDescription : nftDescr, 
                         image: values.nftImagePath,
-                        attributes: values.nftItemAttr,
+                        attributes: (values.nftItemAttr == "") ? JSON.stringify(attributes): values.nftItemAttr,
                     }
                     const nftItemContentPacked: Cell =  packJettonOnchainMetadata(nftItemContentToPack)
 
@@ -470,10 +493,21 @@ export class AMMOrders {
             const nftItemUnpack = unpackJettonOnchainMetadata(p.nftItemContentPacked, false)
 
             let order = PoolV3Contract.orderJettonId(p.jetton0WalletAddr, p.jetton1WalletAddr)
-            let logicalJetton0 = order ? metadata0["symbol"] : metadata1["symbol"]
-            let logicalJetton1 = order ? metadata1["symbol"] : metadata0["symbol"]
+            let logicalJetton0Name = order ? metadata0["symbol"] : metadata1["symbol"]
+            let logicalJetton1Name = order ? metadata1["symbol"] : metadata0["symbol"]
 
-    
+            const config = poolv3StateInitConfig(
+                p.jetton0WalletAddr, 
+                p.jetton1WalletAddr,
+                /* Fix this. Should use codes from the blockchain */
+                Cell.fromBoc(Buffer.from(ContractDict.AccountV3Contract    , "base64"))[0], 
+                Cell.fromBoc(Buffer.from(ContractDict.PositionNFTV3Contract, "base64"))[0],
+                msg.info.dest as Address
+            )
+
+            const poolContract = PoolV3Contract.createFromConfig(config, Cell.fromBoc(Buffer.from(ContractDict.PoolV3Contract, "base64"))[0])
+ 
+
             return `Create New Pool For<br/>` + 
             `  <b>Minter1:</b> ${jetton0MinterS} &nbsp;<span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]}</span><br/>` + 
             `  <b>Wallet1:</b> ${jetton0WalletS}<br/>` + 
@@ -482,7 +516,7 @@ export class AMMOrders {
             `  <b>Wallet2:</b> ${jetton1WalletS}<br/>` + 
     
             `  Tick Spacing : ${p.tickSpacing}<br/>` +
-            `  Price : ${p.sqrtPriceX96} ( 1&nbsp;${logicalJetton0} = ${getApproxFloatPrice(p.sqrtPriceX96)}&nbsp;${logicalJetton1} ) <br/>` +
+            `  Price : ${p.sqrtPriceX96} ( 1&nbsp;${logicalJetton0Name} = ${getApproxFloatPrice(p.sqrtPriceX96)}&nbsp;${logicalJetton1Name} ) <br/>` +
     
             `  Controller :  ${controllerS}<br/>` +           
             `  NFT Collection:  <br/>`  + 
@@ -508,7 +542,20 @@ export class AMMOrders {
             `  </ol>` +
             `  </div>` +            
             `  <div><img src="${nftItemUnpack["image"]}" width="128px" ></div>` +
-            `  </div> `;
+            `  </div> `+
+            `  <div><pre>` +
+`<div class="jsoncode">` +
+`{
+    "address": "${poolContract.address}",
+    "name": "${metadata0["symbol"]}-${metadata1["symbol"]}",
+    "tickSpacing": ${p.tickSpacing},
+    "jetton0": "${p.jetton0Minter}",
+    "jetton1": "${p.jetton1Minter}",
+    "isSwapped": ${!order}
+}` +
+`</div>` + 
+            `</pre></div>`
+
         } catch (e) {
         }
     

@@ -109,8 +109,26 @@ export const nftItemContentPackedDefault: Cell =  packJettonOnchainMetadata(nftI
 let nftItemContent1ToPack = "https://pimenovalexander.github.io/resources/icons/metadata.json"
 //const nftItemContentPacked: Cell =  packOffchainMetadata (nftItemContent1ToPack)
 
+export function poolv3StateInitConfig(
+    jetton0Wallet: Address,
+    jetton1Wallet: Address,
+    accountV3Code: Cell,
+    positionNftV3Code: Cell,
+    routerAddress: Address
+) : PoolV3ContractConfig {
+    let order = PoolV3Contract.orderJettonId(jetton0Wallet, jetton1Wallet)
 
-
+    const config: PoolV3ContractConfig = {
+        router_address : routerAddress,
+  
+        jetton0_wallet : order ? jetton0Wallet : jetton1Wallet,
+        jetton1_wallet : order ? jetton1Wallet : jetton0Wallet,
+  
+        accountv3_code : accountV3Code,
+        position_nftv3_code : positionNftV3Code
+    }
+    return config
+}
 
 export function poolv3ContractConfigToCell(config: PoolV3ContractConfig): Cell {
     let ticks = Dictionary.empty(Dictionary.Keys.Int(24), DictionaryTickInfo);
