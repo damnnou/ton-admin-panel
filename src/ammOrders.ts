@@ -173,7 +173,7 @@ export class AMMOrders {
                     const reserve0 = BigInt(values.price0reserve)
                     let price = (! swapIds) ? encodePriceSqrt(reserve1, reserve0) : encodePriceSqrt(reserve0, reserve1)
 
-                    let poolStringName = `${metadata0["symbol"]}-${metadata1["symbol"]}`
+                    const poolStringName = `${metadata0["symbol"]}-${metadata1["symbol"]}`
                     let nftContentToPack : { [s: string]: string | undefined } =     {  
                         name   : "Pool Minter:" + poolStringName,
                         description : "TONCO Pool LP Minter for " + poolStringName, 
@@ -507,6 +507,7 @@ export class AMMOrders {
 
             const poolContract = PoolV3Contract.createFromConfig(config, Cell.fromBoc(Buffer.from(ContractDict.PoolV3Contract, "base64"))[0])
  
+            /* !!! We should check for injection in user data */
 
             return `Create New Pool For<br/>` + 
             `  <b>Minter1:</b> ${jetton0MinterS} &nbsp;<span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]}</span><br/>` + 
@@ -523,10 +524,10 @@ export class AMMOrders {
             `  <div><img src="${nftUnpack["cover_image"]}"  width="256px"></div>` +            
             `  <div class="pair_line_s">`+
             `  <ol>`  + 
-                `  <li> ${nftUnpack["name"]} </li>`  + 
-                `  <li> ${nftUnpack["description"]} </li>`  + 
-                `  <li> <a href="${nftUnpack["image"]}"      >${nftUnpack["image"]}      </a> </li>`  + 
-                `  <li> <a href="${nftUnpack["cover_image"]}">${nftUnpack["cover_image"]}</a> </li>`  + 
+                `  <li> <b>Name:</b> ${nftUnpack["name"]} </li>`  + 
+                `  <li> <b>Description:</b> ${nftUnpack["description"]} </li>`  + 
+                `  <li> <b>Image:</b> <a href="${nftUnpack["image"]}"      >${nftUnpack["image"]}      </a> </li>`  + 
+                `  <li> <b>Cover Image:</b> <a href="${nftUnpack["cover_image"]}">${nftUnpack["cover_image"]}</a> </li>`  + 
             `  </ol>` +
             `  <div><img src="${nftUnpack["image"]}" width="128px" ></div>` +
             `  </div> `+
@@ -535,10 +536,10 @@ export class AMMOrders {
             `  <div>` +
             `  NFT Item:  <br/>`  + 
             `  <ol>`  + 
-                `  <li> ${nftItemUnpack["name"]} </li>`  + 
-                `  <li> ${nftItemUnpack["description"]} </li>`  + 
-                `  <li> <a href="${nftItemUnpack["image"]}" >${nftItemUnpack["image"]} </a> </li>`  + 
-                `  <li> ${nftItemUnpack["attributes"]} </li>`  + 
+                `  <li>  <b>Name:</b> ${nftItemUnpack["name"]} </li>`  + 
+                `  <li> <b>Description:</b> ${nftItemUnpack["description"]} </li>`  + 
+                `  <li> <b>Image:</b>  <a href="${nftItemUnpack["image"]}" >${nftItemUnpack["image"]} </a> </li>`  + 
+                `  <li> <b>Attributes:</b> ${nftItemUnpack["attributes"]} </li>`  + 
             `  </ol>` +
             `  </div>` +            
             `  <div><img src="${nftItemUnpack["image"]}" width="128px" ></div>` +

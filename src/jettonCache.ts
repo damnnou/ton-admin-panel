@@ -3,6 +3,7 @@ import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 import { unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 import { PTonMinterV2 } from "./amm/common/PTonMinterV2";
+import { escapeHtml } from "./utils/utils";
 
 
 type UnpackedMetadata = {[x:string] : string}
@@ -17,23 +18,35 @@ export async function getJettonMetadata(minterAddress : Address, isTestnet : boo
     if (!(name in jettonCache)) {    
         const provider0 = new MyNetworkProvider(minterAddress, isTestnet)
 
-        let metadata = {}
+        let metadata : {[key: string]: string} = {}
         let loaded = false;
-        //try {
-            const jetton0 : JettonMinter = JettonMinter.createFromAddress(minterAddress)
-            const metadataPack0 = await jetton0.getJettonData(provider0)    
-            metadata = unpackJettonOnchainMetadata(metadataPack0.content)
-            loaded = true
-        //} catch {
-        //}
-        /* Could be this is a proxyTon */
-        /*try {
-            const jetton0 : PTonMinterV2 = PTonMinterV2.createFromAddress(minterAddress)
-            const metadataPack0 = await jetton0.getJettonData(provider0)    
-            metadata = unpackJettonOnchainMetadata(metadataPack0.content)
-            loaded = true
-        } catch {
-        }*/
+       
+        const jetton0 : JettonMinter = JettonMinter.createFromAddress(minterAddress)
+        const metadataPack0 = await jetton0.getJettonData(provider0)    
+        metadata = unpackJettonOnchainMetadata(metadataPack0.content)
+        if (metadata.uri) {
+            console.log("We have offchain metadata at", )
+
+            try {
+                const response = await fetch(metadata.uri);
+                
+                if (!response.ok) {
+                  throw new Error(`Error fetching data: ${response.statusText}`);
+                }
+            
+                const data = await response.json();  // Parse the JSON
+                metadata = data
+              } catch (error) {
+                console.error("Failed to download and parse JSON", error);
+                throw error;  // Rethrow the error for further handling
+              }
+        }
+
+
+        loaded = true
+        for (let key of Object.keys(metadata)) {
+            metadata[key] = escapeHtml(metadata[key])
+        }
         jettonCache[name] = metadata
     }
    

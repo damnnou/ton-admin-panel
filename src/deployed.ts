@@ -22,8 +22,8 @@ export function getJettonList (isTestnet : boolean) {
 export const jettonListTestnet = [
     /* That is a hack */
     {
-        "name": "Router:Current",
-        "minter": "0QDk_t0nc0hpuEFn4Q83E0Gml30oMfjVKVIQf0bpHGo-6Kak"
+        "name": "Router:💧🎪🦺🚔",
+        "minter": "0QAE_TOnCFUwic-KfCaKf7sN17W9h7_jv-N_lzhJocEs9imB"
     },
     {
         "name": "pTon",
