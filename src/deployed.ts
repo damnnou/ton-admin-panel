@@ -94,8 +94,8 @@ export const jettonListTestnet = [
 
   export const jettonListMainnet = [ 
     {
-        "name": "Router:Current",
-        "minter": "EQDr-T0ncOC4YkKXTRVk5tRV2izh2jTOpQRyRUs_8DyfOfab"
+        "name": "Router:💧🎪🦺🚔",
+        "minter": "EQBluCPWA7iw9kGJUC2mGmFa1dbhruPgwhQQN675Muimi_4V"
     },
     {
         "name": "pTon",
