@@ -138,8 +138,8 @@ export class AMMOrders {
                     controller     : { name: 'Controller', type: 'Address' },
                     nftName        : { name: 'NFT Name (empty for default)', type: 'String' },
                     nftDescription : { name: 'NFT description(empty for default)', type: 'String' },
-                    nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-astro.png"},
-                    nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-cover.jpeg"},
+                    nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-logo-nft.png"},
+                    nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-logo-nft.png"},
                     nftItemAttr    : { name: 'NFT Item Attributes (empty for default)', type: 'String'},
 
                 },
@@ -192,7 +192,7 @@ export class AMMOrders {
 
                     const poolContract = PoolV3Contract.createFromConfig(config, Cell.fromBoc(Buffer.from(ContractDict.PoolV3Contract, "base64"))[0])
                 
-                    const nftDescr = "This NFT represents a liquidity position in a TONCO "+ poolStringName +" pool. The owner of this NFT can modify or claim the rewards.\n" + 
+                    const nftDescr = "%N%\nThis NFT represents a liquidity position in a TONCO "+ poolStringName +" pool. The owner of this NFT can modify or claim the rewards.\n" + 
                     `Pool Address: ${poolContract.address}\n` + 
                     `${metadata0["symbol"]} Master Address: ${jetton0MinterAddress.toString()}\n` + 
                     `${metadata1["symbol"]} Master Address: ${jetton1MinterAddress.toString()}\n`

@@ -77,7 +77,17 @@ export const jettonListTestnet = [
       "minter": "EQD00XKMrx_6OaGfgOeMUl0pe0rvTQyuxi85pPbTAueQ70mB",
       "name": "F6",
       "wallet": "EQCGMuLk9pCi4llVL9xpwXE478crHowsnVOOiDjJgdCJU3DY"
+    },
+
+    {
+      "minter": "kQAJ8uWd7EBqsmpSWaRdf_I-8R8-XHwh3gsNKhy-UrdrPX6i",
+      "name": "HMSTR",    
+    },
+    {
+      "minter": "EQAvlWFDxGF2lXm67y4yzC17wYKD9A0guwPkMs1gOsM__NOT",
+      "name": "NOT",    
     }
+    
   ]
 
 
