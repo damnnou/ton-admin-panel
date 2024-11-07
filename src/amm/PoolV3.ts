@@ -1,8 +1,8 @@
-import { Address, beginCell, Cell, toNano, internal, Contract, OpenedContract, Sender, WalletContractV4, fromNano } from "@ton/ton"
+import { Address, beginCell, Cell, toNano, internal, Contract, OpenedContract, Sender, WalletContractV4 } from "@ton/ton"
 import { SandboxContract, TreasuryContract } from "@ton/sandbox"
 import { KeyPair } from "@ton/crypto"
 
-import { encodePriceSqrt, getApproxFloatPrice, TickMath } from "./frontmath/frontMath"
+import { encodePriceSqrt, TickMath } from "./frontmath/frontMath"
 import { JettonWallet } from "./common/JettonWallet"
 import { JettonAPI } from "./JettonAPI"
 import { PoolV3Contract } from "./PoolV3Contract"
@@ -15,7 +15,7 @@ import { RouterV3Contract } from "./RouterV3Contract"
 type BlockchainProvider = (x : Contract ) => SandboxContract<Contract> | OpenedContract<Contract>
 
 /*
-   This class abstracts the Pool hiding the fact that pool may have intrenally exchanged two jettons 
+   This class abstracts the Pool hiding the fact that pool may have internally exchanged two jettons 
 */
 export class PoolV3 {
 
@@ -204,7 +204,7 @@ export class PoolV3 {
 
     /* 
         This functions creates two payloads that would be delivered to Router.
-        Due to TON blockchain design there is no garantee which one will come first, 
+        Due to TON blockchain design there is no guarantee which one will come first, 
         so they both have enough information to trigger a position mint.    
     */
     formPoolMintRequest(      
@@ -221,7 +221,7 @@ export class PoolV3 {
             beginCell()
                 .storeUint( ContractOpcodes.POOLV3_FUND_ACCOUNT, 32) // Request to minting part 1
                 .storeAddress(routerWallet1Addr)            // Jetton1 Wallet attached to Router is used to identify target token. Note part0 has second token
-                .storeCoins(jetton0Amount)                  // Jettons that would be transfered with this requset
+                .storeCoins(jetton0Amount)                  // Jettons that would be transferred with this request
                 .storeCoins(jetton1Amount)
                 .storeUint(mintLiquidity, 128)  // Liquidity. First transaction don't trigger to mint anything. NB! But we don't know which will arrive first
                 .storeInt (tickLower,      24)  // Min tick.  
@@ -265,7 +265,7 @@ export class PoolV3 {
         const userWallet0Addr = await this.jetton0.getWalletAddress(walletOpened.address);
         const userWallet1Addr = await this.jetton1.getWalletAddress(walletOpened.address);
 
-        // We ask the pool for the price. Depending on the swap it could be the price 0 -> 1 exchange or vica versa
+        // We ask the pool for the price. Depending on the swap it could be the price 0 -> 1 exchange or vice versa
         // This is a async request to the pool, it's debatable if it should be brought to separate function
         const poolPriceAndLiq = await this.poolContract.getPoolStateAndConfiguration()
         const est = this.estimateInputs(mintTickLower, mintTickUpper, mintLiquidity, poolPriceAndLiq.price_sqrt)
@@ -304,7 +304,7 @@ export class PoolV3 {
         if (est.jetton0Amount != 0n) {
             if (this.jetton0.isTonProxy) {
                 // pTonProxy needs another way to process the call.
-                // There is no addditional user wallet for this task (wonder if it could be?)
+                // There is no additional user wallet for this task (wonder if it could be?)
 
                 console.log("Jetton 0 is TonProxy")
                 const mintPart0 = beginCell()
@@ -312,7 +312,7 @@ export class PoolV3 {
                     .storeUint   (0, 64)                 // query_id 
                     .storeCoins  (est.jetton0Amount)     // ton To Send. It would we wrapped and then lp minted from them
                     .storeAddress(walletOpened.address)  // refundAddress
-                    .storeUint   (1, 1)                  // flag that shows that paylod is a cell  
+                    .storeUint   (1, 1)                  // flag that shows that payload is a cell  
                     .storeRef    (poolMintRequest.part0) // Instructions for the pool
                 .endCell()
 
@@ -323,7 +323,7 @@ export class PoolV3 {
                     est.jetton0Amount, 
                     this.routerContract.address, 
                     walletOpened.address, 
-                    new Cell(), PoolV3.gasUsage.MINT_PART_GAS,                      
+                    null, PoolV3.gasUsage.MINT_PART_GAS,                      
                     poolMintRequest.part0                   
                 )
                 messages.push({to : userWallet0Addr, value : mintGasPart, body : mintPart0 })
@@ -339,7 +339,7 @@ export class PoolV3 {
                     .storeUint   (0, 64)                // query_id 
                     .storeCoins  (est.jetton1Amount)    // ton To Send. It would we wrapped and then lp minted from them
                     .storeAddress(walletOpened.address) // refundAddress
-                    .storeUint   (1, 1)                 // flag that shows that paylod is a cell  
+                    .storeUint   (1, 1)                 // flag that shows that payload is a cell  
                     .storeRef    (poolMintRequest.part1)         // Instructions for the pool
                 .endCell()
 
@@ -349,7 +349,7 @@ export class PoolV3 {
                     est.jetton1Amount, 
                     this.routerContract.address, 
                     walletOpened.address, 
-                    new Cell(), PoolV3.gasUsage.MINT_PART_GAS, 
+                    null, PoolV3.gasUsage.MINT_PART_GAS, 
                     poolMintRequest.part1
                 )  
                 messages.push({to : userWallet1Addr, value : mintGasPart, body : mintPart1 })
@@ -394,7 +394,7 @@ export class PoolV3 {
             [tickLower, tickUpper] = [-tickUpper, -tickLower]
         }
 
-        let burnResult = await this.poolContract.sendBurn(sender, toNano(0.4), nftIndex, tickLower, tickUpper, liquidity2Burn);
+        let burnResult = await this.poolContract.sendBurn(sender, PoolV3.gasUsage.BURN_GAS, nftIndex, tickLower, tickUpper, liquidity2Burn);
         return burnResult
     }
            
@@ -430,7 +430,7 @@ export class PoolV3 {
             sourceRW = this.routerWallet0!
             targetRW = this.routerWallet1!
             // Generally when zero tokens a are put in pool the price goes down (it denotes how much token0 is in terms of token1)
-            // So if there is no swap of pool tokenids priceUp is false
+            // So if there is no swap of pool token ids priceUp is false
             priceUp = this.swapIds ? true : false
         } else {
             console.log(`We about to put ${amountIn} of token1 in the pool`)
@@ -461,7 +461,7 @@ export class PoolV3 {
                 .storeAddress(targetRW.address)              // JettonWallet attached to Router is used to identify target token                  
                 .storeUint   (priceLimit, 160)               // Minimum/maximum price that we are ready to reach
                 .storeCoins  (minOutAmount ?? 0n)            // Minimum amount to get back
-                .storeAddress(walletOpened.address)          // Address to recieve result of the swap                              
+                .storeAddress(walletOpened.address)          // Address to receive result of the swap                              
             .endCell()
 
         let swapResult 
@@ -489,7 +489,7 @@ export class PoolV3 {
                 amountIn, 
                 this.routerContract.address, 
                 walletOpened.address, 
-                beginCell().endCell(), 
+                null, 
                 PoolV3.gasUsage.SWAP_GAS_BASE,
                 swapRequest
             )      

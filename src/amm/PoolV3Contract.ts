@@ -2,6 +2,7 @@ import { Address, beginCell, Cell,  Dictionary, DictionaryValue, Contract, contr
 import { ContractOpcodes, OpcodesLookup } from "./opCodes";
 import { packJettonOnchainMetadata} from "./common/jettonContent";
 import { ContractMessageMeta, DummyCell} from "./DummyCell";
+import { FEE_DENOMINATOR, IMPOSSIBLE_FEE } from "./frontmath/frontMath";
   
 
 
@@ -109,6 +110,8 @@ export const nftItemContentPackedDefault: Cell =  packJettonOnchainMetadata(nftI
 let nftItemContent1ToPack = "https://pimenovalexander.github.io/resources/icons/metadata.json"
 //const nftItemContentPacked: Cell =  packOffchainMetadata (nftItemContent1ToPack)
 
+
+/* This function creates the config only form the values that affect the address */
 export function poolv3StateInitConfig(
     jetton0Wallet: Address,
     jetton1Wallet: Address,
@@ -129,6 +132,7 @@ export function poolv3StateInitConfig(
     }
     return config
 }
+
 
 export function poolv3ContractConfigToCell(config: PoolV3ContractConfig): Cell {
     let ticks = Dictionary.empty(Dictionary.Keys.Int(24), DictionaryTickInfo);
@@ -229,8 +233,7 @@ export class PoolV3Contract implements Contract {
   
     async sendDeploy(provider: ContractProvider, via: Sender, value: bigint,         
         tickSpacing : number,
-        sqrtPriceX96: bigint,
-        
+        sqrtPriceX96: bigint,        
         opts: {
             activate_pool? : boolean, 
 
@@ -240,9 +243,12 @@ export class PoolV3Contract implements Contract {
             controller?: Address,
 
             nftContentPacked? : Cell,
-            nftItemContentPacked? : Cell
-        }
-    
+            nftItemContentPacked? : Cell,
+
+            protocolFee? : number,
+            lpFee      ? : number,
+            currentFee ? : number
+        }    
     ) {
         if (! opts.activate_pool) {
             opts.activate_pool = false;
@@ -271,6 +277,10 @@ export class PoolV3Contract implements Contract {
             .storeUint(1, 1)
             .storeUint(opts.activate_pool ? 1 : 0, 1)
 
+            .storeUint(opts.protocolFee ? opts.protocolFee  : IMPOSSIBLE_FEE , 16)
+            .storeUint(opts.lpFee       ? opts.lpFee        : IMPOSSIBLE_FEE , 16)
+            .storeUint(opts.currentFee  ? opts.currentFee   : IMPOSSIBLE_FEE , 16)  
+
             .storeRef(opts.nftContentPacked     ?? nftContentPackedDefault)
             .storeRef(opts.nftItemContentPacked ?? nftItemContentPackedDefault)
             .storeMaybeRef(minterCell)
@@ -297,7 +307,11 @@ export class PoolV3Contract implements Contract {
             controller?: Address,
 
             nftContentPacked? : Cell,
-            nftItemContentPacked? : Cell
+            nftItemContentPacked? : Cell,
+
+            protocolFee?: number,
+            lpFee      ?: number,
+            currentFee ?: number
         }
     ) : Cell
     {
@@ -307,9 +321,7 @@ export class PoolV3Contract implements Contract {
                 .storeAddress(opts.jetton0Minter)
                 .storeAddress(opts.jetton1Minter)
            .endCell()
-        }
-
-        
+        }        
         let body : Cell = beginCell()
             .storeUint(ContractOpcodes.POOLV3_INIT, 32) // OP code
             .storeUint(0, 64) // query_id
@@ -325,6 +337,10 @@ export class PoolV3Contract implements Contract {
             .storeUint(opts.activate_pool == undefined ? 0 : 1, 1)
             .storeUint(opts.activate_pool ? 1 : 0, 1)
 
+            .storeUint(opts.protocolFee ? opts.protocolFee  : IMPOSSIBLE_FEE , 16)
+            .storeUint(opts.lpFee       ? opts.lpFee        : IMPOSSIBLE_FEE , 16)
+            .storeUint(opts.currentFee  ? opts.currentFee   : IMPOSSIBLE_FEE , 16)  
+
             .storeRef(opts.nftContentPacked     ?? beginCell().endCell())
             .storeRef(opts.nftItemContentPacked ?? beginCell().endCell())
             .storeMaybeRef(minterCell)
@@ -338,7 +354,6 @@ export class PoolV3Contract implements Contract {
         tickSpacing?   : number,
         sqrtPriceX96?  : bigint,
 
-
         jetton0Minter? : Address,
         jetton1Minter? : Address,
         admin? : Address,
@@ -346,6 +361,10 @@ export class PoolV3Contract implements Contract {
 
         nftContentPacked? : Cell,
         nftItemContentPacked? : Cell
+
+        protocolFee?: number,
+        lpFee      ?: number,
+        currentFee ?: number
     }
     {
         let s = body.beginParse()
@@ -371,11 +390,20 @@ export class PoolV3Contract implements Contract {
         let activate_poolV = (s.loadUint(1) == 1)
         let activate_pool = (setActive != 0) ? activate_poolV : undefined
 
+        const protocolFeeV = s.loadUint(16)        
+        const protocolFee = (protocolFeeV < IMPOSSIBLE_FEE) ? protocolFeeV : undefined        
+        const lpFeeV       = s.loadUint(16)
+        const lpFee = (lpFeeV < IMPOSSIBLE_FEE) ? lpFeeV : undefined        
+        const currentFeeV  = s.loadUint(16)
+        const currentFee = (currentFeeV < IMPOSSIBLE_FEE) ? currentFeeV : undefined        
+
+
+
         let nftContentPacked = s.loadRef()
         let nftItemContentPacked = s.loadRef()
 
 
-        return {admin, controller, tickSpacing, sqrtPriceX96, activate_pool, nftContentPacked, nftItemContentPacked}
+        return {admin, controller, tickSpacing, sqrtPriceX96, activate_pool, nftContentPacked, nftItemContentPacked, protocolFee, lpFee, currentFee}
 
     }
 
@@ -392,7 +420,11 @@ export class PoolV3Contract implements Contract {
             controller?: Address,
 
             nftContentPacked? : Cell,
-            nftItemContentPacked? : Cell
+            nftItemContentPacked? : Cell,
+
+            protocolFee?: number,
+            lpFee      ?: number,
+            currentFee ?: number
         }
     
     ) {
@@ -532,46 +564,45 @@ export class PoolV3Contract implements Contract {
     }
 
     async getPoolStateAndConfiguration(provider: ContractProvider) {
-      const { stack } = await provider.get("getPoolStateAndConfiguration", []);
+        const { stack } = await provider.get("getPoolStateAndConfiguration", []);
    
-      return {
-          router_address     : stack.readAddress(),
-          admin_address      : stack.readAddress(),
-          controller_address : stack.readAddress(),
+        return {
+            router_address     : stack.readAddress(),
+            admin_address      : stack.readAddress(),
+            controller_address : stack.readAddress(),
 
-          jetton0_wallet : stack.readAddress(),
-          jetton1_wallet : stack.readAddress(),
+            jetton0_wallet : stack.readAddress(),
+            jetton1_wallet : stack.readAddress(),
 
-          jetton0_minter : stack.readAddress(),
-          jetton1_minter : stack.readAddress(),
+            jetton0_minter : stack.readAddress(),
+            jetton1_minter : stack.readAddress(),
 
-          pool_active    : stack.readBoolean(),   
-          tick_spacing   : stack.readNumber(),   
+            pool_active    : stack.readBoolean(),   
+            tick_spacing   : stack.readNumber(),   
 
-          lp_fee_base    : stack.readNumber(),   
-          protocol_fee   : stack.readNumber(),   
-          lp_fee_current : stack.readNumber(),
+            lp_fee_base    : stack.readNumber(),   
+            protocol_fee   : stack.readNumber(),   
+            lp_fee_current : stack.readNumber(),
 
-          tick           : stack.readNumber(),   
-          price_sqrt     : stack.readBigNumber(),   
-          liquidity      : stack.readBigNumber(), 
+            tick           : stack.readNumber(),   
+            price_sqrt     : stack.readBigNumber(),   
+            liquidity      : stack.readBigNumber(), 
 
-          feeGrowthGlobal0X128  : stack.readBigNumber(), 
-          feeGrowthGlobal1X128  : stack.readBigNumber(), 
-          collectedProtocolFee0 : stack.readBigNumber(), 
-          collectedProtocolFee1 : stack.readBigNumber(), 
+            feeGrowthGlobal0X128  : stack.readBigNumber(), 
+            feeGrowthGlobal1X128  : stack.readBigNumber(), 
+            collectedProtocolFee0 : stack.readBigNumber(), 
+            collectedProtocolFee1 : stack.readBigNumber(), 
 
-          nftv3item_counter : stack.readBigNumber(),
-          
-          reserve0 : stack.readBigNumber(),
-          reserve1 : stack.readBigNumber(),
+            nftv3item_counter : stack.readBigNumber(),
+            
+            reserve0 : stack.readBigNumber(),
+            reserve1 : stack.readBigNumber(),
 
-          nftv3items_active : stack.readBigNumber(),
-          ticks_occupied    :  stack.readNumber(),
+            nftv3items_active : stack.readBigNumber(),
+            ticks_occupied    :  stack.readNumber(),
 
-          seqno    :  stack.readBigNumber(),
-  
-      }
+            seqno    :  stack.readBigNumber(),
+        }        
     }
 
     /* This is ston.fi version of the data query */
@@ -843,10 +874,10 @@ export class PoolV3Contract implements Contract {
 
         if (op == ContractOpcodes.POOLV3_INIT)
         {        
-            result.push({ name:`op`,              value: `${p.loadUint(32) }`, type:`Uint(32) op`,   comment: "First mandatory operation that fills crucial parameters of the pool"})    
+            result.push({ name:`op`,              value: `${p.loadUint(32) }`, type:`Uint(32) op`,   comment: "The first mandatory operation that fills crucial parameters of the pool"})    
             result.push({ name:`query_id`,        value: `${p.loadUint(64) }`, type:`Uint(64) `  ,   comment : "queryid as of the TON documentation"}) 
             
-            let has_admin = (p.preloadUint(1) == 1)            
+            let has_admin = (p.preloadUint(1) == 1)
             result.push({ name:`has_admin`,       value: `${p.loadInt (1)  }`, type:`UInt(1) `,      comment: "Flag that shows if this message have a new admin address"}) 
             if (has_admin) {
                 result.push({ name:`admin_addr`,      value: `${p.loadAddress()}`, type:`Address()`, comment: "New address of the admin. If has_admin is false could be 00b"})
@@ -864,10 +895,14 @@ export class PoolV3Contract implements Contract {
             result.push({ name:`initial_priceX96`,value: `${p.loadUintBig(160)}`, type:`Uint(160),PriceX96`, comment: "Initial price for the pool"}) 
             result.push({ name:`set_active` ,     value: `${p.loadInt (1)  }`, type:`UInt(1) `  ,            comment: "Flag that shows if pool_active should be set to the pool or ignored"}) 
             result.push({ name:`pool_active`,     value: `${p.loadInt (1)  }`, type:`UInt(1) `  ,            comment: "Flag is we should start the pool as unlocked"}) 
+            
+            result.push({ name:`protocol_fee`,  value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Liquidity provider fee. base in FEE_DENOMINATOR parts. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
+            result.push({ name:`lp_fee_base`,   value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Protocol fee in FEE_DENOMINATOR. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
+            result.push({ name:`lp_fee_current`,value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Current value of the pool fee, in case of dynamic adjustment. If value is more than ${FEE_DENOMINATOR} value would be default`})
 
             p.loadRef()
             result.push({ name:`nftv3_content`     , value: `metadata` , type:`Cell(),Metadata` })
-            p.loadRef()            
+            p.loadRef()
             result.push({ name:`nftv3item_content` , value: `metadata` , type:`Cell(),Metadata` })
 
             result.push({ name:`has_minters`,  value: `${p.loadInt(1)  }`, type:`UInt(1) `       , comment: "Flag that stores if this message has minters" }) 
@@ -949,12 +984,25 @@ export class PoolV3Contract implements Contract {
             result.push({ name:`liquidity2Burn` , value: `${p.loadUintBig(128)}`, type:`Uint(128)`, comment : "Amount of the liquidity to burn, 0 is a valid amount, in this case only collected fees would be returned"})   
 
             let p1 = p.loadRef().beginParse()
-            result.push({ name:`feeGrowthInside0LastX128`, value: `${p1.loadUintBig(256)}`, type:`Uint(256)`})    
-            result.push({ name:`feeGrowthInside1LastX128`, value: `${p1.loadUintBig(256)}`, type:`Uint(256)`})   
+            result.push({ name:`feeGrowthInside0LastX128`, value: `${p1.loadUintBig(256)}`, type:`Uint(256)`}) 
+            result.push({ name:`feeGrowthInside1LastX128`, value: `${p1.loadUintBig(256)}`, type:`Uint(256)`})
+
+            let p2 = p.loadRef().beginParse() 
+            result.push({ name:`feeGrowthInside0CurrentX128`   , value: `${p2.loadUintBig(256)}`  , type:`Uint(256),Indexer`})
+            result.push({ name:`feeGrowthInside1CurrentX128`   , value: `${p2.loadUintBig(256)}`  , type:`Uint(256),Indexer`})
         }
         if (op == ContractOpcodes.POOLV3_SWAP)
         {       
-            result.push({ name:`op`               , value: `${p.loadUint(32)}`    , type:`Uint(32) op`, comment: "Computes the swap math, and issues a command to the router to send funds. Only would be accepted from the router"})  
+            result.push({ name:`op`               , value: `${p.loadUint(32)}`    , type:`Uint(32) op`, 
+                comment: "Computes the swap math, and issues a command to the router to send funds. Only would be accepted from the router\n" + 
+                "This operation we have several input parameters that would affect the result of the swap\n" + 
+                "| Condition | Swap result | Returned Change | Error Code |\n" + 
+                "|    ---    |    ---      |       ---       | ---        |\n" + 
+                "|  Swap finished sqrtPriceLimitX96 not reached. minOutAmount surpassed  |   total output number of coins  |  0   |  RESULT_SWAP_OK |\n" + 
+                "|  Swap finished minOutAmount not surpassed |  0  |  amount   |  RESULT_SWAP_OUTPUT_TOO_SMALL |\n" + 
+                "|  Swap reached sqrtPriceLimitX96 after changing part1 coins. minOutAmount surpassed |  output number of coins  |  amount - part1  |  RESULT_SWAP_OK |\n" +                 
+                
+                ""})  
             result.push({ name:`query_id`         , value: `${p.loadUint(64)}`    , type:`Uint(64) `, comment : "queryid as of the TON documentation" })  
             result.push({ name:`source_wallet`    , value: `${p.loadAddress()}`   , type:`Address()`, comment : "jetton wallet attached to the router"})
 
@@ -963,6 +1011,13 @@ export class PoolV3Contract implements Contract {
             result.push({ name:`sqrtPriceLimitX96`, value: `${p1.loadUintBig(160)}`, type:`Uint(160),PriceX96`, comment : "Limit marginal price. Swap won't go beyond it."}) 
             result.push({ name:`minOutAmount`     , value: `${p1.loadCoins()  }`   , type:`Coins()  `, comment : "Minimum amount of the output jettons to get back. If not reached, your input would be returned to you"})
             result.push({ name:`from_real_user`   , value: `${p1.loadAddress()}`  , type:`Address() `})
+            result.push({ name:`forward_amount`   , value: `${p.loadCoins()  }`   , type:`Coins()  `, comment : "Amount of ton that would be attached to forward payload"}) 
+            let forwardPayload = p.loadMaybeRef()
+            if (forwardPayload) {
+                result.push({ name:`forward_payload`   , value: forwardPayload.toBoc().toString('hex') , type:`Cell(), Payload` })
+            } else {
+                result.push({ name:`forward_payload`   , value: `none` , type:`Cell()` })
+            }   
         }
 
         return result;

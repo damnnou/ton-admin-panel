@@ -2,6 +2,7 @@ import BigNumber from 'bignumber.js'
 
 
 export const FEE_DENOMINATOR: number = 10000
+export const IMPOSSIBLE_FEE: number = FEE_DENOMINATOR + 1
 
 // constants used internally but not expected to be used externally
 export const MaxUint256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn

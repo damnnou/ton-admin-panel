@@ -55,7 +55,7 @@ export const jettonListTestnet = [
     },
     {
       "minter": "EQDeH8DU3t3-EmNvJQl2YnOvLMLTfODvhbTNsawu4UuZmG0n",
-      "name": "USD",
+      "name": "USDD",
       "wallet": "EQDerKwiEx1LGT28kdgVULNB87qpF9U2FAEvaHK_9ImFGeRo"
     },
     {
@@ -80,14 +80,70 @@ export const jettonListTestnet = [
     },
 
     {
-      "minter": "kQAJ8uWd7EBqsmpSWaRdf_I-8R8-XHwh3gsNKhy-UrdrPX6i",
-      "name": "HMSTR",    
+      "minter": "EQAG2hEsO_ZJwkRYlx4rexL6-5BOyyXbNld-1rTmgCjmSePN",
+      "name": "CATI Testnet Release",
+      "wallet": "EQDJKGiuBRYl4QpsDUO4bXxf7frbQVkCLdz-j09JPddwl5OY"
     },
     {
-      "minter": "EQAvlWFDxGF2lXm67y4yzC17wYKD9A0guwPkMs1gOsM__NOT",
-      "name": "NOT",    
+      "minter": "EQBjbwenS9b65t5qG5A06WZEbY9IQcgfM2m0wupEcjkpEnmy",
+      "name": "DOGS Testnet Release",
+      "wallet": "EQDJH5LEdmXGvlV2z2wI_f-FfyLoZfwjX1NTdURfZwG9ZWTX"
+    },
+    {
+      "minter": "EQA-Kqv6uPDvdBCGbW30LNAUcMWUuu_PakFnX91HZ_ZwW1Js",
+      "name": "DUREV Testnet Release",
+      "wallet": "EQDKqIgBReTRLF6LYbPnRAGk9_x4sxymM2xbKkFlkstkWkJn"
+    },
+    {
+      "minter": "EQBZwXTkaMhw4BmslCWHowr9er80nu5YnLppLYEg7zWvfqfw",
+      "name": "HMSTR Testnet Release",
+      "wallet": "EQCzl1Q9V4Wwbp9Ha7DzvSATWILXXksVk-6dKSq6iWmYT_5M"
+    },
+    {
+      "minter": "EQBYnZx4uFhz-DWjC5LT4n1Aoqvy3e-qhN9541MKDPpf19CK",
+      "name": "JETTON Testnet Release",
+      "wallet": "EQDwAGqhxPUvXrNFkzYF2GpeiD3VMHuq1ni2zSgzJYYVvVLh"
+    },
+    {
+      "minter": "EQARmuFxND7Cg-FJVZPq0EBhb_YLzzmcQqevpu8857VhgUOu",
+      "name": "NOT Testnet Release",
+      "wallet": "EQDwKN7pCj-yhYCNslHkKNPPxC1yjCCnGQPNIGLN8t-VeW46"
+    },
+    {
+      "minter": "EQDOrck2VWwKejS3BhOqkcepMTmIKrWBU8Mz5-kTKkmnqTxA",
+      "name": "STTON Testnet Release",
+      "wallet": "EQAeI3olefRSjSQXbuEaG4hzJf279YyIGattHXzgiydZxA9O"
+    },
+    {
+      "minter": "EQC6eLeUdGpjFIKi6NZAL3BXgkThcGBc8aTjkcFouvCCu1aj",
+      "name": "TON Testnet Release",
+      "wallet": "EQC4D4BKlWQz43wJXW3SnvhtHMdueru_uCSdAXNXz2MwUvNB"
+    },
+    {
+      "minter": "EQCmeq1871o1Jboc4IE482Om5avn3wD3nmEwSv1j-kOsci3G",
+      "name": "TSTON Testnet Release",
+      "wallet": "EQClMXWXKsIKKubwjZKvgYyHs8_-PdMLHOqiCWh1O6AkYrQL"
+    },
+    {
+      "minter": "EQC4TQ2VgbnM9ZNdtPTg4HtILfTWhx45le1yWZPfPQqA6LQ7",
+      "name": "USDT Testnet Release",
+      "wallet": "EQA57Po90n4U9O-a4u60warz7dnzQKMu1rOXWfHVQDmF5K7q"
+    },
+    {
+      "minter": "EQAC_rc0McaDoNGKZbRPLTgW3Sxj_lIIt3d9grJfceeMl4HN",
+      "name": "UTON Testnet Release",
+      "wallet": "EQBn2YtPotvCVcc8S-JuLaDIO943mm3-YacfpEsENFnyCMDh"
+    },
+    {
+      "minter": "EQDI8JRAbyreoQOkOFnpwSgKetVVXd70T5vgfK9_GzYsBu8w",
+      "name": "WALL Testnet Release",
+      "wallet": "EQDqKbjzEGZQHSwr5QUfjyDE-ROL2SHw3_FxUsVwwVhLhkdq"
+    },
+    {
+      "minter": "EQAOxIemSJrEQvCwNCDAiYPyVaY9SVmC4zffF1BGWd6Ugp7g",
+      "name": "X Testnet Release",
+      "wallet": "EQDojKtbq9ztkIIWo5RnWp5tFFO64NCcLafGEnuI0OL8NitA"
     }
-    
   ]
 
 
@@ -127,8 +183,10 @@ export const jettonListTestnet = [
     {
         "minter": "EQCvxJy4eG8hyHBFsZ7eePxrRsUQSFE_jpptRAYBmcG_DOGS",
         "name": "DOGS",
+    },
+    {
+        "minter": "EQAJ8uWd7EBqsmpSWaRdf_I-8R8-XHwh3gsNKhy-UrdrPcUo",
+        "name": "HMSTR",
     }
-
-
 
   ]

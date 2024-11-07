@@ -1,12 +1,13 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode, Slice } from "@ton/core";
-import { ContractOpcodes, OpcodesLookup } from "./opCodes";
+import { ContractErrors, ContractOpcodes, OpcodesLookup } from "./opCodes";
 import { ContractMessageMeta, DummyCell } from "./DummyCell";
 import { nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract";
+import { FEE_DENOMINATOR, IMPOSSIBLE_FEE } from "./frontmath/frontMath";
 
 /** Initial data structures and settings **/
 export type RouterV3ContractConfig = {    
-    active : boolean,
     adminAddress : Address,  
+    poolFactoryAddress : Address,  
     poolv3_code : Cell;    
     accountv3_code : Cell;
     position_nftv3_code : Cell;       
@@ -16,8 +17,8 @@ export type RouterV3ContractConfig = {
 
 export function routerv3ContractConfigToCell(config: RouterV3ContractConfig): Cell {
     return beginCell()
-        .storeUint(config.active ? 1 : 0, 1)
         .storeAddress(config.adminAddress)
+        .storeAddress(config.poolFactoryAddress)
         .storeUint(0, 64)        
         .storeRef(config.poolv3_code)
         .storeRef(config.accountv3_code)
@@ -29,15 +30,15 @@ export function routerv3ContractConfigToCell(config: RouterV3ContractConfig): Ce
 export function routerv3ContractCellToConfig(c: Cell): RouterV3ContractConfig {
     let s : Slice = c.beginParse()
 
-    const active : boolean = (s.loadUint(1) == 1)
     const adminAddress : Address = s.loadAddress()
+    const poolFactoryAddress : Address = s.loadAddress()
     const seqno = s.loadUintBig(64)
     const poolv3_code         : Cell = s.loadRef()
     const accountv3_code      : Cell = s.loadRef()
     const position_nftv3_code : Cell = s.loadRef()       
     const nonce : bigint      = s.loadUintBig(64)
 
-    return {active, adminAddress, poolv3_code, accountv3_code, position_nftv3_code, nonce}
+    return {adminAddress, poolFactoryAddress, poolv3_code, accountv3_code, position_nftv3_code, nonce}
 }
 
 export class RouterV3Contract implements Contract {
@@ -71,14 +72,18 @@ export class RouterV3Contract implements Contract {
         jetton1WalletAddr: Address,
         tickSpacing : number,
         sqrtPriceX96: bigint,
-        activatePool : boolean,
+        activatePool : boolean,        
         opts: {
             jetton0Minter?: Address,
             jetton1Minter?: Address,
             controllerAddress?: Address,
 
             nftContentPacked? : Cell,
-            nftItemContentPacked? : Cell
+            nftItemContentPacked? : Cell,
+
+            protocolFee? : number,
+            lpFee?       : number,
+            currentFee?  : number,
         }
     ) : Cell
     {
@@ -90,6 +95,10 @@ export class RouterV3Contract implements Contract {
           .storeUint(tickSpacing , 24)
           .storeUint(sqrtPriceX96, 160)
           .storeUint(activatePool ? 1 : 0, 1)
+          .storeUint(opts.protocolFee ? opts.protocolFee  : IMPOSSIBLE_FEE , 16)
+          .storeUint(opts.lpFee       ? opts.lpFee        : IMPOSSIBLE_FEE , 16)
+          .storeUint(opts.currentFee  ? opts.currentFee   : IMPOSSIBLE_FEE , 16)
+
           .storeRef (opts.nftContentPacked     ?? nftContentPackedDefault)
           .storeRef (opts.nftItemContentPacked ?? nftItemContentPackedDefault)
           .storeRef (beginCell()
@@ -113,7 +122,11 @@ export class RouterV3Contract implements Contract {
         controllerAddress?: Address,
 
         nftContentPacked? : Cell,
-        nftItemContentPacked? : Cell
+        nftItemContentPacked? : Cell,
+
+        protocolFee? : number,
+        lpFee?       : number,
+        currentFee?  : number,
     }
     {
         let s = body.beginParse()
@@ -127,6 +140,14 @@ export class RouterV3Contract implements Contract {
         let tickSpacing = s.loadInt(24)
         let sqrtPriceX96 = s.loadUintBig(160)
         let activatePool = (s.loadUint(1) != 0)
+
+        const protocolFeeV = s.loadUint(16)        
+        const protocolFee = (protocolFeeV < IMPOSSIBLE_FEE) ? protocolFeeV : undefined        
+        const lpFeeV       = s.loadUint(16)
+        const lpFee = (lpFeeV < IMPOSSIBLE_FEE) ? lpFeeV : undefined        
+        const currentFeeV  = s.loadUint(16)
+        const currentFee = (currentFeeV < IMPOSSIBLE_FEE) ? currentFeeV : undefined        
+
         let nftContentPacked = s.loadRef()
         let nftItemContentPacked = s.loadRef()
 
@@ -144,7 +165,10 @@ export class RouterV3Contract implements Contract {
             jetton1Minter,
             controllerAddress,    
             nftContentPacked,
-            nftItemContentPacked
+            nftItemContentPacked,
+            protocolFee,
+            lpFee,
+            currentFee
         }     
     }
 
@@ -164,7 +188,11 @@ export class RouterV3Contract implements Contract {
           controllerAddress?: Address,
 
           nftContentPacked? : Cell,
-          nftItemContentPacked? : Cell
+          nftItemContentPacked? : Cell,
+          
+          protocolFee? : number,
+          lpFee?       : number,
+          currentFee?  : number,
       }
 
     ) {
@@ -202,12 +230,35 @@ export class RouterV3Contract implements Contract {
         return {newAdmin}
     }
 
+    static changePoolFactoryMessage(newPoolFactory : Address) : Cell {
+        return beginCell()
+            .storeUint(ContractOpcodes.ROUTERV3_CHANGE_POOL_FACTORY, 32) // OP code
+            .storeUint(0, 64) // QueryID what for?
+            .storeAddress(newPoolFactory)
+        .endCell();
+    }
+
+    static unpackPoolFactoryMessage( body :Cell) : { newPoolFactory : Address }
+    {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        if (op != ContractOpcodes.ROUTERV3_CHANGE_POOL_FACTORY)
+            throw Error("Wrong opcode")
+
+        const query_id = s.loadUint(64)
+        const newPoolFactory = s.loadAddress()
+        return {newPoolFactory}
+    }
 
     async sendChangeAdmin(provider: ContractProvider, sender: Sender, value: bigint, newAdmin : Address) {
         const msg_body = RouterV3Contract.changeAdminMessage(newAdmin)
         return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
     }
 
+    async sendChangePoolFactory(provider: ContractProvider, sender: Sender, value: bigint, newPoolFactory : Address) {
+        const msg_body = RouterV3Contract.changeAdminMessage(newPoolFactory)
+        return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
+    }
 
     /** Getters **/
     async getIsLocked(provider: ContractProvider) : Promise<boolean> {
@@ -257,8 +308,8 @@ export class RouterV3Contract implements Contract {
     }
 
 
-    public static RESULT_SWAP_OK = 0xc64370e5;
-    public static RESULT_BURN_OK = 0xdda48b6a;
+    public static RESULT_SWAP_OK = ContractErrors.POOLV3_RESULT_SWAP_OK;
+    public static RESULT_BURN_OK = ContractErrors.POOLV3_RESULT_BURN_OK;
 
     static printParsedInput(body: Cell | DummyCell) : ContractMessageMeta[] {
         let result : ContractMessageMeta[] = []
@@ -294,6 +345,11 @@ export class RouterV3Contract implements Contract {
             result.push({ name:`jetton_wallet1`,   value: `${p.loadAddress()}`, type:`Address()`  , comment: "Address of the jetton1 wallet. Used to compute pool address" })
             result.push({ name:`tick_spacing`,     value: `${p.loadInt(24)  }`, type:`Int(24)  `  , comment: "Tick spacing to be used in the pool"}) 
             result.push({ name:`initial_priceX96`, value: `${p.loadUintBig(160)}`, type:`Uint(160),PriceX96`, comment: "Initial price for the pool"}) 
+
+            result.push({ name:`protocol_fee`,  value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Liquidity provider fee. base in FEE_DENOMINATOR parts. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
+            result.push({ name:`lp_fee_base`,   value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Protocol fee in FEE_DENOMINATOR. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
+            result.push({ name:`lp_fee_current`,value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Current value of the pool fee, in case of dynamic adjustment. If value is more than ${FEE_DENOMINATOR} value would be default`})
+
             p.loadRef()
             result.push({ name:`nftv3_content`   , value: `metadata` , type:`Cell(),Metadata` })
             p.loadRef()            
@@ -329,9 +385,12 @@ export class RouterV3Contract implements Contract {
             
             let exit_code = p.preloadUint(32)
             result.push({ name:`exit_code`,       value: `${p.loadUint(32)  }`, type:`Uint(32) `})  
+            result.push({ name:`seqno`,           value: `${p.loadUint(64)  }`, type:`Uint(64), Indexer`})  
 
-            let hasCoinsInfo    = p.loadBoolean();
-            let hasIndexerInfo  = p.loadBoolean();
+            let hasCoinsInfo    = p.preloadBit();
+            result.push({ name:`hasCoinsInfo`,       value: `${p.loadBoolean()  }`, type:`Boolean() `})  
+            let hasIndexerInfo  = p.preloadBit();
+            result.push({ name:`hasIndexerInfo`,     value: `${p.loadBoolean()  }`, type:`Boolean() `})  
 
             if (hasCoinsInfo) {
                 let p1 = p.loadRef().beginParse()
@@ -362,14 +421,38 @@ export class RouterV3Contract implements Contract {
             }
         }      
 
+        if (op == ContractOpcodes.ROUTERV3_RESET_GAS) {
+            result.push({ name:`op`,                value: `${p.loadUint(32)  }` , type:`Uint(32) op`})
+        }
+
+        if (op == ContractOpcodes.ROUTERV3_CHANGE_ADMIN) {
+            result.push({ name:`op`,               value: `${p.loadUint(32)  }`  , type:`Uint(32) op`})
+            result.push({ name:`new_admin`,        value: `${p.loadAddress() }`  , type:`Address()`})
+
+        }
+
         if (op == ContractOpcodes.POOLV3_SWAP)
         {      
-            result.push({ name:`op`,                value: `${p.loadUint(32)  }`  , type:`Uint(32) op`})  
+            result.push({ name:`op`,                value: `${p.loadUint(32)  }`  , type:`Uint(32) op`, comment: "Computes the swap math, and issues a command to the router to send funds. Only would be accepted from the router"})  
             result.push({ name:`sender`,            value: `${p.loadAddress() }`  , type:`Address()`})  
             result.push({ name:`sqrtPriceLimitX96`, value: `${p.loadUintBig(160)}`, type:`Uint(160),PriceX96`}) 
             result.push({ name:`minOutAmount`     , value: `${p.loadCoins()  }`   , type:`Coins()  `})
-            result.push({ name:`to_address`,        value: `${p.loadAddress() }`  , type:`Address()`})              
+            result.push({ name:`to_address`,        value: `${p.loadAddress() }`  , type:`Address()`})
+            result.push({ name:`forward_amount`   , value: `${p.loadCoins()  }`   , type:`Coins()  `, comment : "Amount of ton that would be attached to forward payload"}) 
+            let forwardPayload = p.loadMaybeRef()
+            if (forwardPayload) {
+                result.push({ name:`forward_payload`   , value: forwardPayload.toBoc().toString('hex') , type:`Cell(), Payload` })
+            } else {
+                result.push({ name:`forward_payload`   , value: `none` , type:`Cell()` })
+            }       
         }      
+
+        if (op == ContractOpcodes.JETTON_EXCESSES)
+        {      
+            result.push({ name:`op`,                value: `${p.loadUint(32)  }`  , type:`Uint(32) op`})  
+            if (p.remainingBits != 0)
+                result.push({ name:`seqno`,                value: `${p.loadUint(64)  }`  , type:`Uint(64), Indexer`})  
+        }
 
         return result;
 

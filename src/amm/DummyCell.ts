@@ -4,8 +4,8 @@ const BLACK_HOLE_ADDRESS  : Address = Address.parse("EQAAAAAAAAAAAAAAAAAAAAAAAAA
 
 export type ContractMessageMeta = {name: string, value: string, type:string, comment? : string }
 
-export class DummyBuiler {
-
+export class DummyBuilder {
+    public remainingBits = 256
 
     constructor(public op: number) {
     }
@@ -27,7 +27,11 @@ export class DummyBuiler {
         return 0
     }
 
-    loadBoolean() : boolean {
+    preloadBit() : boolean {        
+        return true
+    }
+
+    loadBoolean() : boolean {        
         return false
     }
 
@@ -63,8 +67,8 @@ export class DummyCell {
     constructor(public op: number) {
     }
 
-    beginParse( ) : DummyBuiler {
-        return new DummyBuiler(this.op)
+    beginParse( ) : DummyBuilder {
+        return new DummyBuilder(this.op)
     }
 
     toBoc() : Buffer {

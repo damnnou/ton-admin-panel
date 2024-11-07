@@ -46,7 +46,7 @@ export class AMMOrders {
                 fields: {
                     amountTW: { name: 'TON for pTon Wallet Deploy', type: 'TON', default : '0.05' },
                     amountRD: { name: 'TON Amount for Router'     , type: 'TON', default : '0.08' },
-                    
+                    poolFactory: { name: 'Pool Factory Contract'     , type: 'Address'},
                     nonce : { name: 'Nonce', type: 'BigInt' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
@@ -65,8 +65,8 @@ export class AMMOrders {
 
 
                     let routerConfig : RouterV3ContractConfig = {
-                        active : true,
                         adminAddress : multisigAddress,
+                        poolFactoryAddress : values.poolFactory.address,
                 
                         poolv3_code : poolCell,    
                         accountv3_code : accountCell,
@@ -111,8 +111,6 @@ export class AMMOrders {
                     newAdmin : { name: 'New Admin', type: 'Address' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
-                    
-
                     return {
                         toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
@@ -120,7 +118,21 @@ export class AMMOrders {
                     };
                 }
             },
-
+            {
+                name: 'Change Router Pool Factory',
+                fields: {
+                    router   : { name: 'Router', type: 'Address' },
+                    amount   : { name: 'TON Amount', type: 'TON', default : '0.1' },
+                    newPoolFactory : { name: 'New Pool Factory', type: 'Address' }
+                },
+                makeMessage: async (values, multisigAddress : Address) => {
+                    return {
+                        toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
+                        tonAmount: values.amount,
+                        body: RouterV3Contract.changePoolFactoryMessage(values.newPoolFactory.address)
+                    };
+                }
+            },
             {
                 name: 'Deploy Pool',
                 fields: {
@@ -343,7 +355,7 @@ export class AMMOrders {
                     pool:        { name: 'Pool Address', type: 'Address' },
                     activeFee:   { name: 'Active Fee',   type: 'BigInt'  },
                     protocolFee: { name: 'Protocol Fee', type: 'BigInt'  },
-                    amount:      { name: 'TON Amount',   type: 'TON'     },
+                    amount:      { name: 'TON Amount',   type: 'TON'    , default : "0.01" },
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     const msg_body = beginCell()
@@ -495,6 +507,10 @@ export class AMMOrders {
             let order = PoolV3Contract.orderJettonId(p.jetton0WalletAddr, p.jetton1WalletAddr)
             let logicalJetton0Name = order ? metadata0["symbol"] : metadata1["symbol"]
             let logicalJetton1Name = order ? metadata1["symbol"] : metadata0["symbol"]
+            let logicalDecimals0 = order ? metadata0["decimals"] : metadata1["decimals"]
+            let logicalDecimals1 = order ? metadata1["decimals"] : metadata0["decimals"]
+
+
 
             const config = poolv3StateInitConfig(
                 p.jetton0WalletAddr, 
@@ -509,15 +525,18 @@ export class AMMOrders {
  
             /* !!! We should check for injection in user data */
 
+            let priceValue = getApproxFloatPrice(p.sqrtPriceX96) * (10 ** Number(logicalDecimals0)) / (10 ** Number(logicalDecimals1))
+            let priceText = `1${logicalJetton0Name} =  ${priceValue}${logicalJetton1Name}`
+
             return `Create New Pool For<br/>` + 
-            `  <b>Minter1:</b> ${jetton0MinterS} &nbsp;<span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]}</span><br/>` + 
+            `  <b>Minter1:</b> ${jetton0MinterS} &nbsp;<span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]} [d:${metadata0["decimals"]}]</span><br/>` + 
             `  <b>Wallet1:</b> ${jetton0WalletS}<br/>` + 
             `  <br/>` +
-            `  <b>Minter2:</b> ${jetton1MinterS} &nbsp;<span><img src="${metadata1['image']}" width='24px' height='24px' > ${metadata1["symbol"]} - ${metadata1["name"]}</span><br/>` + 
+            `  <b>Minter2:</b> ${jetton1MinterS} &nbsp;<span><img src="${metadata1['image']}" width='24px' height='24px' > ${metadata1["symbol"]} - ${metadata1["name"]} [d:${metadata1["decimals"]}]</span><br/>` + 
             `  <b>Wallet2:</b> ${jetton1WalletS}<br/>` + 
     
             `  Tick Spacing : ${p.tickSpacing}<br/>` +
-            `  Price : ${p.sqrtPriceX96} ( 1&nbsp;${logicalJetton0Name} = ${getApproxFloatPrice(p.sqrtPriceX96)}&nbsp;${logicalJetton1Name} ) <br/>` +
+            `  Price : ${p.sqrtPriceX96} ( ${priceText} ) <br/>` +
     
             `  Controller :  ${controllerS}<br/>` +           
             `  NFT Collection:  <br/>`  + 
@@ -579,15 +598,16 @@ export class AMMOrders {
     
             let baseFee     = p.lpFee    / FEE_DENOMINATOR * 100
             let activeFee   = p.currentFee / FEE_DENOMINATOR * 100
+            let protocolFeeOfActive =  p.protocolFee / FEE_DENOMINATOR * 100
             let protocolFee = p.currentFee * p.protocolFee / (FEE_DENOMINATOR * FEE_DENOMINATOR) * 100
     
             console.log(`  Base Fee     : ${baseFee}%     Active Fee   : ${activeFee}%    Protocol Fee ${protocolFee}% `)    
     
             return `Change fees:<br/>` + 
             `<table>` +
-            `<tr><td>Active fee   <td/> ${p.currentFee}  <td/> ${activeFee}   % <td/></tr>` + 
-            `<tr><td>Base fee     <td/> ${p.lpFee}       <td/> ${baseFee}     % <td/></tr>` + 
-            `<tr><td>Protocol Fee <td/> ${p.protocolFee} <td/> ${protocolFee} % <td/></tr>` + 
+            `<tr><td>Active fee   <td/> ${p.currentFee}  <td/> | <td/>${activeFee}   % <td/></tr>` + 
+            `<tr><td>Base fee     <td/> ${p.lpFee}       <td/> | <td/>${baseFee}     % <td/></tr>` + 
+            `<tr><td>Protocol Fee <td/> ${p.protocolFee} <td/> | <td/>of current Fee ${protocolFeeOfActive} %, of swap amount ${protocolFee} % <td/></tr>` + 
             `</table>`;
     
         } catch (e) {
