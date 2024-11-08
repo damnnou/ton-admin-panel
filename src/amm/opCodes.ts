@@ -70,6 +70,7 @@ export class ContractOpcodes {
     static ROUTERV3_CREATE_POOL      : number = 0x2e3034ef // 774911215
     static ROUTERV3_RESET_GAS        : number = 0x42a0fb43 // 1117846339
     static ROUTERV3_CHANGE_ADMIN     : number = 0xd4deb03b // 3571363899
+    static ROUTERV3_CHANGE_FLAGS     : number = 0x57d5fcf7 // 1473641719
     static ROUTERV3_CHANGE_POOL_FACTORY : number = 0x67f2f394 // 1743975316
     static SINKV3_SET                : number = 0xe61425dc // 3860080092
     static SINKV3_ADD                : number = 0xfd1a73e7 // 4246369255
@@ -110,6 +111,7 @@ export const OpcodesLookup = {
     0x511a4463 : "NFT_EDITORSHIP_ASSIGNED,POSITIONNFTV3_EDITORSHIP_ASSIGNED",
     0x530b5f2c : "POOLV3_START_BURN",
     0x56dfeb8a : "ACCOUNTV3_CB_ADD_LIQUIDITY",
+    0x57d5fcf7 : "ROUTERV3_CHANGE_FLAGS",
     0x595f07bc : "JETTON_BURN",
     0x5ee6039f : "POSITIONNFTV3_FEE_COLLECTED",
     0x5fcc3d14 : "NFT_TRANSFER,POSITIONNFTV3_NFT_TRANSFER",
@@ -193,6 +195,7 @@ export class ContractErrors {
     static POOLV3_RESULT_TOO_MANY_TICKS    : number = 223 // 0xdf
     static POOLV3_RESULT_TOO_MUCH_LIQUIDITY : number = 224 // 0xe0
     static POOLV3_RESULT_NOT_ENOUGH_COINS  : number = 225 // 0xe1
+    static POOLV3_RESULT_NO_LIQUIDITY      : number = 226 // 0xe2
     static POSITIONNFTV3_INVALID_CALLER    : number =  82 // 0x52
     static POSITIONNFTV3_INIT_NOT_BY_COLLECTION : number = 405 // 0x195
     static POSITIONNFTV3_NOT_AN_OWNER      : number = 401 // 0x191
@@ -244,6 +247,7 @@ export const ErrorsLookup = {
     223 : "POOLV3_RESULT_TOO_MANY_TICKS",
     224 : "POOLV3_RESULT_TOO_MUCH_LIQUIDITY",
     225 : "POOLV3_RESULT_NOT_ENOUGH_COINS",
+    226 : "POOLV3_RESULT_NO_LIQUIDITY",
     230 : "POOLV3_RESULT_SWAP_OUTPUT_TOO_SMALL",
     333 : "COMMON_WRONG_WORKCHAIN",
     401 : "NFT_NOT_OWNER,POSITIONNFTV3_NOT_AN_OWNER",

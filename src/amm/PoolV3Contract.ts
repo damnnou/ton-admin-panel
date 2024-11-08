@@ -235,6 +235,7 @@ export class PoolV3Contract implements Contract {
         tickSpacing : number,
         sqrtPriceX96: bigint,        
         opts: {
+            is_from_admin? : boolean
             activate_pool? : boolean, 
 
             jetton0Minter?: Address,
@@ -251,20 +252,25 @@ export class PoolV3Contract implements Contract {
         }    
     ) {
         if (! opts.activate_pool) {
-            opts.activate_pool = false;
+            opts.activate_pool = false
         }
 
-        let minterCell = null;
+        let minterCell = null
         if (opts.jetton0Minter && opts.jetton0Minter) {
             minterCell = beginCell()
                 .storeAddress(opts.jetton0Minter)
                 .storeAddress(opts.jetton1Minter)
            .endCell()
         }
+
+        if (opts.is_from_admin == undefined) {
+            opts.is_from_admin = true
+        }
         
         let body : Cell = beginCell()
             .storeUint(ContractOpcodes.POOLV3_INIT, 32) // OP code
             .storeUint(0, 64) // query_id
+            .storeUint((opts.is_from_admin ? 1 : 0) , 1)  // is from admin. 
             .storeUint(opts.admin ? 1 : 0, 1)
             .storeAddress(opts.admin)                 // null is an invalid Address, but valid slice
             .storeUint(opts.controller ? 1 : 0, 1)
@@ -296,6 +302,8 @@ export class PoolV3Contract implements Contract {
 
     static reinitMessage(
         opts: {
+            is_from_admin? : boolean
+
             activate_pool? : boolean, 
             tickSpacing?   : number,
             sqrtPriceX96?  : bigint,
@@ -315,6 +323,10 @@ export class PoolV3Contract implements Contract {
         }
     ) : Cell
     {
+        if (opts.is_from_admin == undefined) {
+            opts.is_from_admin = true
+        }
+
         let minterCell = null;
         if (opts.jetton0Minter && opts.jetton0Minter) {
             minterCell = beginCell()
@@ -325,6 +337,8 @@ export class PoolV3Contract implements Contract {
         let body : Cell = beginCell()
             .storeUint(ContractOpcodes.POOLV3_INIT, 32) // OP code
             .storeUint(0, 64) // query_id
+            .storeUint(opts.is_from_admin ? 1 : 0, 1) // is_from_admin
+            
             .storeUint(opts.admin == undefined ? 0 : 1, 1)
             .storeAddress(opts.admin)                 // null is an invalid Address, but valid slice
             .storeUint(opts.controller == undefined ? 0 : 1, 1)
@@ -350,6 +364,7 @@ export class PoolV3Contract implements Contract {
     }
 
     static unpackReinitMessage( body :Cell) : {
+        is_from_admin? : boolean, 
         activate_pool? : boolean, 
         tickSpacing?   : number,
         sqrtPriceX96?  : bigint,
@@ -370,6 +385,7 @@ export class PoolV3Contract implements Contract {
         let s = body.beginParse()
         const op       = s.loadUint(32)
         const query_id = s.loadUint(64)
+        const is_from_admin = (s.loadUint(1) != 0)
         const setAdmin = s.loadUint(1)
         const admin = (setAdmin == 1) ? s.loadAddress() : undefined
         if (setAdmin == 0) { s.loadUint(2) }
@@ -403,13 +419,15 @@ export class PoolV3Contract implements Contract {
         let nftItemContentPacked = s.loadRef()
 
 
-        return {admin, controller, tickSpacing, sqrtPriceX96, activate_pool, nftContentPacked, nftItemContentPacked, protocolFee, lpFee, currentFee}
+        return {is_from_admin, admin, controller, tickSpacing, sqrtPriceX96, activate_pool, nftContentPacked, nftItemContentPacked, protocolFee, lpFee, currentFee}
 
     }
 
 
     async sendReinit(provider: ContractProvider, via: Sender, value: bigint,           
         opts: {
+            is_from_admin? : boolean, 
+
             activate_pool? : boolean, 
             tickSpacing?   : number,
             sqrtPriceX96?  : bigint,

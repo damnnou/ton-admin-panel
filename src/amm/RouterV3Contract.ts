@@ -8,6 +8,7 @@ import { FEE_DENOMINATOR, IMPOSSIBLE_FEE } from "./frontmath/frontMath";
 export type RouterV3ContractConfig = {    
     adminAddress : Address,  
     poolFactoryAddress : Address,  
+    flags? : bigint,
     poolv3_code : Cell;    
     accountv3_code : Cell;
     position_nftv3_code : Cell;       
@@ -19,6 +20,7 @@ export function routerv3ContractConfigToCell(config: RouterV3ContractConfig): Ce
     return beginCell()
         .storeAddress(config.adminAddress)
         .storeAddress(config.poolFactoryAddress)
+        .storeUint(config.flags ?? 0, 64)        
         .storeUint(0, 64)        
         .storeRef(config.poolv3_code)
         .storeRef(config.accountv3_code)
@@ -32,13 +34,19 @@ export function routerv3ContractCellToConfig(c: Cell): RouterV3ContractConfig {
 
     const adminAddress : Address = s.loadAddress()
     const poolFactoryAddress : Address = s.loadAddress()
+    const flags = s.loadUintBig(64)
+    
     const seqno = s.loadUintBig(64)
     const poolv3_code         : Cell = s.loadRef()
     const accountv3_code      : Cell = s.loadRef()
-    const position_nftv3_code : Cell = s.loadRef()       
-    const nonce : bigint      = s.loadUintBig(64)
+    const position_nftv3_code : Cell = s.loadRef()  
+    
+    let nonce : bigint | undefined = undefined
+    if (s.remainingBits !=0 ) {
+        nonce = s.loadUintBig(64)
+    }
 
-    return {adminAddress, poolFactoryAddress, poolv3_code, accountv3_code, position_nftv3_code, nonce}
+    return {adminAddress, poolFactoryAddress, flags, poolv3_code, accountv3_code, position_nftv3_code, nonce}
 }
 
 export class RouterV3Contract implements Contract {
@@ -230,6 +238,11 @@ export class RouterV3Contract implements Contract {
         return {newAdmin}
     }
 
+    async sendChangeAdmin(provider: ContractProvider, sender: Sender, value: bigint, newAdmin : Address) {
+        const msg_body = RouterV3Contract.changeAdminMessage(newAdmin)
+        return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
+    }
+
     static changePoolFactoryMessage(newPoolFactory : Address) : Cell {
         return beginCell()
             .storeUint(ContractOpcodes.ROUTERV3_CHANGE_POOL_FACTORY, 32) // OP code
@@ -238,7 +251,7 @@ export class RouterV3Contract implements Contract {
         .endCell();
     }
 
-    static unpackPoolFactoryMessage( body :Cell) : { newPoolFactory : Address }
+    static unpackChangePoolFactoryMessage( body :Cell) : { newPoolFactory : Address }
     {
         let s = body.beginParse()
         const op       = s.loadUint(32)
@@ -250,27 +263,59 @@ export class RouterV3Contract implements Contract {
         return {newPoolFactory}
     }
 
-    async sendChangeAdmin(provider: ContractProvider, sender: Sender, value: bigint, newAdmin : Address) {
-        const msg_body = RouterV3Contract.changeAdminMessage(newAdmin)
-        return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
-    }
-
     async sendChangePoolFactory(provider: ContractProvider, sender: Sender, value: bigint, newPoolFactory : Address) {
         const msg_body = RouterV3Contract.changeAdminMessage(newPoolFactory)
         return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
     }
 
-    /** Getters **/
-    async getIsLocked(provider: ContractProvider) : Promise<boolean> {
-      const { stack } = await provider.get("getIsLocked", []);
-      return stack.readBoolean();
+
+    static changeFlagsMessage(flags : bigint) : Cell {
+        return beginCell()
+            .storeUint(ContractOpcodes.ROUTERV3_CHANGE_FLAGS, 32) // OP code
+            .storeUint(0, 64) // QueryID what for?
+            .storeUint(flags, 64)
+        .endCell();
     }
 
-    async getAdminAddress(provider: ContractProvider) : Promise<Address> {
-      const { stack } = await provider.get("getAdminAddress", []);
-      return stack.readAddress();
+    static unpackChangeFlagsMessage( body :Cell) 
+    {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        if (op != ContractOpcodes.ROUTERV3_CHANGE_FLAGS)
+            throw Error("Wrong opcode")
+
+        const query_id = s.loadUint(64)
+        const flags = s.loadUintBig(64)
+        return { flags : flags }
+    }
+
+    async sendChangeFlagsFactory(provider: ContractProvider, sender: Sender, value: bigint, flags : bigint) {
+        const msg_body = RouterV3Contract.changeFlagsMessage(flags)
+        return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
+    }
+
+    /** Getters **/
+    async getState(provider: ContractProvider) {
+        const { stack } = await provider.get("getRouterState", []);
+        return {
+            admin       : stack.readAddress(),
+            pool_factory: stack.readAddress(),
+            flags       : stack.readBigNumber(),
+            pool_seqno  : stack.readBigNumber()
+        }
     }
     
+    async getAdminAddress(provider: ContractProvider) : Promise<Address> {
+        const state = await this.getState(provider)
+        return state.admin;
+    }
+
+    async getPoolFactoryAddress(provider: ContractProvider) : Promise<Address> {
+        const state = await this.getState(provider)
+        return state.pool_factory;
+    }
+  
+
     async getPoolAddress(provider: ContractProvider, jetton0WalletAddr: Address, jetton1WalletAddr: Address) : Promise<Address> {
       const { stack } = await provider.get("getPoolAddress", 
         [

@@ -971,7 +971,7 @@ $('#newOrder_createButton').addEventListener('click', async () => {
                 sendMode: SendMode.PAY_GAS_SEPARATELY,
                 message: innerMessage
             })
-        summary += "<div>" +  (await parseActionBody(innerMessage, IS_TESTNET)) + "</div>"
+        summary += '<div class="action_desc">' +  (await parseActionBody(innerMessage, IS_TESTNET)) + "</div>"
         
         console.log({
             toAddress,

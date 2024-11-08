@@ -55,7 +55,6 @@ button, .btn {
     flex-shrink: 0;
 }
 
-
 .btn-primary {
     border: none;
     background: none;
@@ -120,6 +119,10 @@ button:disabled, .btn:disabled {
     display: flex;
     justify-content: space-between;
     margin-bottom: 2px;
+}
+
+.action_desc {
+    background-color: #CFCFCF;
 }
 
 #multisig_logoutButton {

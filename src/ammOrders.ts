@@ -11,6 +11,7 @@ import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
 import { encodePriceSqrt, FEE_DENOMINATOR, getApproxFloatPrice } from "./amm/frontmath/frontMath"
 import { PoolV3Contract, poolv3StateInitConfig } from "./amm/PoolV3Contract"
+import { PoolFactoryContract, PoolFactoryContractConfig, poolFactoryContractConfigToCell } from "./amm/PoolFactoryContract"
 
 import { getJettonMetadata } from "./jettonCache"
 import { formatAddressAndUrl } from "./utils/utils";
@@ -102,7 +103,63 @@ export class AMMOrders {
                     }]
                 }
             },
+            {
+                name: `Deploy Pool Factory`,
+                fields: {
+                    amount: { name: 'TON Amount for Factory'     , type: 'TON', default : '0.08' },
+                    router: { name: 'Router', type: 'Address'},
+                    nonce : { name: 'Nonce', type: 'BigInt' }
+                },
+                makeMessage: async (values, multisigAddress : Address) => {
+                    let buffer = Buffer.from(ContractDict.PoolFactoryContract, "base64")
+                    let poolFactoryCell : Cell = Cell.fromBoc(buffer)[0]
 
+                    const attributes = [ {"trait_type": "DEX", "value": "TONCO" }]
+
+                    const nftDescr = "%N%\nThis NFT represents a liquidity position in a TONCO " + " pool. The owner of this NFT can modify or claim the rewards.\n";
+
+                    let nftContentToPack : { [s: string]: string | undefined } =     {  
+                        name   : "Pool Minter",
+                        description : "TONCO Pool LP Minter for", 
+                        cover_image : "https://tonco.io/static/tonco-logo-nft.png", 
+                        image: "https://tonco.io/static/tonco-logo-nft.png" 
+                    }
+                    const nftContentPacked: Cell = packJettonOnchainMetadata(nftContentToPack)
+                
+                    const nftItemContentToPack : { [s: string]: string | undefined } =     {  
+                        name        :  "Pool Position", 
+                        description :  nftDescr, 
+                        image: "https://tonco.io/static/tonco-logo-nft.png",
+                        attributes: JSON.stringify(attributes)
+                    }
+                    const nftItemContentPacked: Cell =  packJettonOnchainMetadata(nftItemContentToPack)
+
+
+                    let poolFactoryConfig : PoolFactoryContractConfig = {
+                        adminAddress  : multisigAddress,  
+                        routerAddress : values.router.address,  
+                        nftv3Content  : nftContentPacked,
+                        nftv3itemContent : nftItemContentPacked
+                       
+                    }
+                
+                    const poolFactoryData: Cell = poolFactoryContractConfigToCell(poolFactoryConfig);
+                    const poolFactoryStateInit: StateInit = { data: poolFactoryData,  code: poolFactoryCell }
+                    const poolFactoryAddress: Address = contractAddress(0, poolFactoryStateInit)
+
+                    console.log(" Pool Factory Code Hash   :", "0x" + poolFactoryCell.hash(0).toString("hex"))
+                    console.log(" Admin Address    :", "0x" + multisigAddress.toString())
+                            
+                    console.log(`We would deploy Pool Factory to ${poolFactoryAddress}`)
+
+                    return [{
+                        toAddress: {address: poolFactoryAddress, isTestOnly : IS_TESTNET, isBounceable: false},
+                        tonAmount: values.amountRD,
+                        init: poolFactoryStateInit,
+                        body: beginCell().endCell()
+                    }]
+                }
+            },
             {
                 name: 'Change Router Admin',
                 fields: {
@@ -115,6 +172,21 @@ export class AMMOrders {
                         toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
                         body: RouterV3Contract.changeAdminMessage(values.newAdmin.address)
+                    };
+                }
+            },
+            {
+                name: 'Change Router Flags',
+                fields: {
+                    router   : { name: 'Router', type: 'Address' },
+                    amount   : { name: 'TON Amount', type: 'TON', default : '0.1' },
+                    newFlags : { name: 'New Flags', type: 'BigInt' }
+                },
+                makeMessage: async (values, multisigAddress : Address) => {
+                    return {
+                        toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
+                        tonAmount: values.amount,
+                        body: RouterV3Contract.changeFlagsMessage(values.newFlags)
                     };
                 }
             },
@@ -420,6 +492,10 @@ export class AMMOrders {
             const config : RouterV3ContractConfig = routerv3ContractCellToConfig(msg.init.data)
 
             const adminAddrS = await formatAddressAndUrl(config.adminAddress, isTestnet)
+            const poolFactoryAddrS = await formatAddressAndUrl(config.poolFactoryAddress, isTestnet)
+            const flags = config.flags ?? 0
+            const nonce = config.nonce ?? 0
+            
             let pTonWallet : Cell = Cell.fromBoc(Buffer.from(ContractDict["pTonWallet"], "base64"))[0]
           
             /* */           
@@ -453,6 +529,10 @@ export class AMMOrders {
             return  `Spend ${value} TON <br/>` +            
                 `Deploy contract to ${targetAddrS} <br>` + 
                 `Admin:  ${adminAddrS} <br>` + 
+                `PoolFactory:  ${poolFactoryAddrS} <br>` + 
+                `Flags:  ${"0x" + flags.toString(16).padStart(16, "0")} <br>` + 
+                `Nonce:  ${nonce} <br>` + 
+                
                 `<table>` +
                 `<tr><td>Emoji hash:          <td/><font size="10">${emojiHash}</font><br></td></tr>` +
                 `<tr><td>TONCO Release hash:  <td/><b><tt><font color="red">0x${totalHash.toString("hex")}</font></b></tt><br></td></tr>` +
@@ -483,6 +563,23 @@ export class AMMOrders {
             const newAdminS = await formatAddressAndUrl(p.newAdmin, isTestnet)
             return `Order to change admin for the Router <br/>` + 
                    `New Admin: ${newAdminS}`
+        } catch (e) {
+        }
+
+
+        try {
+            let p = RouterV3Contract.unpackChangePoolFactoryMessage(cell)
+            const newPoolFactoryS = await formatAddressAndUrl(p.newPoolFactory, isTestnet)
+            return `Order to change pool factory for the Router <br/>` + 
+                   `New Pool Factory: ${newPoolFactoryS}`
+        } catch (e) {
+        }
+
+        try {
+            let p = RouterV3Contract.unpackChangeFlagsMessage(cell)
+            const newFlags = p.flags
+            return `Order to change Router Flags <br/>` + 
+                   `New Router Flags:  ${"0x" + newFlags.toString(16).padStart(16, "0")}`
         } catch (e) {
         }
 
