@@ -415,9 +415,11 @@ export class PoolV3Contract implements Contract {
 
 
 
-        let nftContentPacked = s.loadRef()
-        let nftItemContentPacked = s.loadRef()
+        let nftContentPackedV = s.loadRef()
+        let nftContentPacked  =  (nftContentPackedV.beginParse().remainingBits != 0) ? nftContentPackedV : undefined
 
+        let nftItemContentPackedV = s.loadRef()
+        let nftItemContentPacked  =  (nftItemContentPackedV.beginParse().remainingBits != 0) ? nftItemContentPackedV : undefined
 
         return {is_from_admin, admin, controller, tickSpacing, sqrtPriceX96, activate_pool, nftContentPacked, nftItemContentPacked, protocolFee, lpFee, currentFee}
 

@@ -10,7 +10,7 @@ import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
 import { encodePriceSqrt, FEE_DENOMINATOR, getApproxFloatPrice } from "./amm/frontmath/frontMath"
-import { PoolV3Contract, poolv3StateInitConfig } from "./amm/PoolV3Contract"
+import { nftContentToPack, PoolV3Contract, poolv3StateInitConfig } from "./amm/PoolV3Contract"
 import { PoolFactoryContract, PoolFactoryContractConfig, poolFactoryContractConfigToCell } from "./amm/PoolFactoryContract"
 
 import { getJettonMetadata } from "./jettonCache"
@@ -38,6 +38,11 @@ function xorBuffers(buffers: Buffer[]): Buffer {
  
 
 export class AMMOrders {
+
+
+    static prepareNFTContent () {
+        
+    }
 
     static getOrderTypes( IS_TESTNET : boolean ) : OrderType[]  
     {
@@ -223,7 +228,7 @@ export class AMMOrders {
                     nftName        : { name: 'NFT Name (empty for default)', type: 'String' },
                     nftDescription : { name: 'NFT description(empty for default)', type: 'String' },
                     nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-logo-nft.png"},
-                    nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-logo-nft.png"},
+                    nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-cover.png"},
                     nftItemAttr    : { name: 'NFT Item Attributes (empty for default)', type: 'String'},
 
                 },
@@ -395,25 +400,36 @@ export class AMMOrders {
             {
                 name: 'Change NFT Content',
                 fields: {
-                    pool: {
-                        name: 'Pool Address',
-                        type: 'Address'
-                    },                
-                    amount: {
-                        name: 'TON Amount',
-                        type: 'TON'
-                    },
-                    nftName        : { name: 'NFT Name (empty for default)', type: 'String' },
-                    nftDescription : { name: 'NFT description(empty for default)', type: 'String' },
-                    nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-astro.png"},
-                    nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-cover.jpeg"},
+                    pool:   { name: 'Pool Address', type: 'Address' },                
+                    amount: { name: 'TON Amount', type: 'TON' },
+                    nftName        : { name: 'NFT Name (empty for unchanged)', type: 'String' },
+                    nftDescription : { name: 'NFT description(empty for unchanged)', type: 'String' },
+                    nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-logo-nft.png"},
+                    nftCoverPath   : { name: 'NFT Cover URL', type: 'String' , default: "https://tonco.io/static/tonco-cover.png"},
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
-                    const msg_body = beginCell()
-                        .storeUint(ContractOpcodes.POOLV3_COLLECT_PROTOCOL, 32) // OP code
-                        .storeUint(0, 64) // query_id          
-                    .endCell();
 
+                    const pool = new PoolV3Contract(values.pool.address)
+                    const poolProvider = new MyNetworkProvider(values.pool.address, IS_TESTNET)
+                    const poolCollection = await pool.getNFTCollectionContent(poolProvider)
+
+                    const nftContent : {[x: string] : string} = unpackJettonOnchainMetadata(poolCollection.nftv3_content)
+
+                    if (values.nftName != "") 
+                        nftContent.name = values.nftName
+                    if (values.nftDescription != "") 
+                        nftContent.description = values.nftDescription
+                    if (values.nftImagePath != "") 
+                        nftContent.image = values.nftImagePath
+                    if (values.nftCoverPath != "")
+                        nftContent.cover_image = values.nftCoverPath
+
+                    console.log(nftContent)
+
+                    const nftContentPacked  = packJettonOnchainMetadata(nftContent)
+                    const msg_body = PoolV3Contract.reinitMessage(
+                        {nftContentPacked : nftContentPacked}
+                    )
                     return {
                         toAddress: values.pool,
                         tonAmount: values.amount,
@@ -424,10 +440,11 @@ export class AMMOrders {
             {
                 name: 'Change NFT Item',
                 fields: {
-                    pool:        { name: 'Pool Address', type: 'Address' },
-                    activeFee:   { name: 'Active Fee',   type: 'BigInt'  },
-                    protocolFee: { name: 'Protocol Fee', type: 'BigInt'  },
-                    amount:      { name: 'TON Amount',   type: 'TON'    , default : "0.01" },
+                    pool:   { name: 'Pool Address', type: 'Address' },                
+                    amount: { name: 'TON Amount', type: 'TON' },
+                    nftName        : { name: 'NFT Name (empty for unchanged)', type: 'String' },
+                    nftDescription : { name: 'NFT description(empty for unchanged)', type: 'String' },
+                    nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-logo-nft.png"},
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     const msg_body = beginCell()
@@ -475,6 +492,23 @@ export class AMMOrders {
         ]
     }
 
+    static renderNFTContent (nftUnpack: {[x : string] : string}): string
+    {
+        return (
+        `  NFT Collection:  <br/>`  + 
+        `  <div><img src="${nftUnpack["cover_image"]}"  width="256px"></div>` +            
+        `  <div class="pair_line_s">`+
+        `  <ol>`  + 
+            `  <li> <b>Name:</b> ${nftUnpack["name"]} </li>`  + 
+            `  <li> <b>Description:</b> ${nftUnpack["description"]} </li>`  + 
+            `  <li> <b>Image:</b> <a href="${nftUnpack["image"]}"      >${nftUnpack["image"]}      </a> </li>`  + 
+            `  <li> <b>Cover Image:</b> <a href="${nftUnpack["cover_image"]}">${nftUnpack["cover_image"]}</a> </li>`  + 
+        `  </ol>` +
+        `  <div><img src="${nftUnpack["image"]}" width="128px" ></div>` +
+        `  </div> `
+        );
+    }
+    
 
     static async parseActionBody (msg: MessageRelaxed, isTestnet : boolean): Promise<string> 
     {
@@ -607,8 +641,6 @@ export class AMMOrders {
             let logicalDecimals0 = order ? metadata0["decimals"] : metadata1["decimals"]
             let logicalDecimals1 = order ? metadata1["decimals"] : metadata0["decimals"]
 
-
-
             const config = poolv3StateInitConfig(
                 p.jetton0WalletAddr, 
                 p.jetton1WalletAddr,
@@ -636,17 +668,7 @@ export class AMMOrders {
             `  Price : ${p.sqrtPriceX96} ( ${priceText} ) <br/>` +
     
             `  Controller :  ${controllerS}<br/>` +           
-            `  NFT Collection:  <br/>`  + 
-            `  <div><img src="${nftUnpack["cover_image"]}"  width="256px"></div>` +            
-            `  <div class="pair_line_s">`+
-            `  <ol>`  + 
-                `  <li> <b>Name:</b> ${nftUnpack["name"]} </li>`  + 
-                `  <li> <b>Description:</b> ${nftUnpack["description"]} </li>`  + 
-                `  <li> <b>Image:</b> <a href="${nftUnpack["image"]}"      >${nftUnpack["image"]}      </a> </li>`  + 
-                `  <li> <b>Cover Image:</b> <a href="${nftUnpack["cover_image"]}">${nftUnpack["cover_image"]}</a> </li>`  + 
-            `  </ol>` +
-            `  <div><img src="${nftUnpack["image"]}" width="128px" ></div>` +
-            `  </div> `+
+            (this.renderNFTContent(nftUnpack)) +
             `          `+
             `  <div class="pair_line_s">`+
             `  <div>` +
@@ -678,13 +700,27 @@ export class AMMOrders {
     
         try {
             let p = PoolV3Contract.unpackReinitMessage(cell)
+            let unpackedCollection 
+            if (p.nftContentPacked) {
+                unpackedCollection = unpackJettonOnchainMetadata(p.nftContentPacked, false)                 
+            }
+
+            let unpackedItem             
+            if (p.nftItemContentPacked) {
+                unpackedItem = unpackJettonOnchainMetadata(p.nftContentPacked, false)                 
+            }
+
+            // unpackJettonOnchainMetadata(p.nftItemContentPacked) }
+
             return `Change pool parameters:<br/>` +
             `<ol>` +
             `  <li>Pool Active/Locked : ${p.activate_pool == undefined ? "unchanged" : p.activate_pool } </li> ` +
             `  <li>Pool Tick Spacing  : ${p.tickSpacing == undefined ? "unchanged" : p.tickSpacing } </li> ` +
             `  <li>Pool Price  : ${p.sqrtPriceX96 == undefined ? "unchanged" : p.sqrtPriceX96 } </li> ` +
             `  <li>Pool Controller  : ${p.controller == undefined ? "unchanged" : p.controller } </li> ` +
-            `  <li>Pool Admin  : ${p.admin == undefined ? "unchanged" : p.controller } </li> ` +       
+            `  <li>Pool Admin  : ${p.admin == undefined ? "unchanged" : p.controller } </li> ` +
+            `  <li>Pool Collection Metadata : ${p.nftContentPacked == undefined ? "unchanged" : "CHANGED:" +  (this.renderNFTContent(unpackedCollection))} </li> ` +
+            `  <li>NFT Item Metadata : ${p.nftItemContentPacked == undefined ? "unchanged" : "CHANGED:" + unpackedItem.toString() } </li> ` +            
             `</ol>` 
     
         } catch (e) {
