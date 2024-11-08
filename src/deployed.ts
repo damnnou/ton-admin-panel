@@ -22,15 +22,14 @@ export function getJettonList (isTestnet : boolean) {
 
 export const jettonListTestnet = [
     /* That is a hack */
-
+    {
+      "name": "Router: 🕹♌️🤱🌡 (New Testnet Deploy 08.11.2024)",
+      "minter": "EQDA-TONcOp2IIqfpkGnL2fInc-Cm-ZCS5uy_EF_B3etN1Uv"
+    },  
     {
       "name": "Router: 🚉👖◼✂ (for indexer test)",
       "minter": "EQAN-TONIOdpazUG5aSecU3MA2Ch6qTSvan9qJJ1JVuP1gO1"
-  },  
-    {
-        "name": "Router: 😋🥠🦾🌟 (unstable)",
-        "minter": "0QDhQMo2esRu-B0J6zzZkDrYfg4T_Q3S_Q7-FBdEIKDYMlHb"
-    },      
+    },  
     {
         "name": "Router:💧🎪🦺🚔",
         "minter": "0QAE_TOnCFUwic-KfCaKf7sN17W9h7_jv-N_lzhJocEs9imB"
