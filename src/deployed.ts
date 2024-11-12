@@ -13,7 +13,7 @@ export function getPTonMinterAddress (isTestnet : boolean) {
 
 export function getJettonList (isTestnet : boolean) {
     if (isTestnet) {
-        return jettonListTestnet
+        return jettonListTestnet 
     } else {
         return jettonListMainnet
     }
@@ -22,6 +22,10 @@ export function getJettonList (isTestnet : boolean) {
 
 export const jettonListTestnet = [
     /* That is a hack */
+    {
+      "name": "Router: 🪡↘🤫📀 (Testnet Deploy before first mainnet 11.11.2024)",
+      "minter": "EQCf_TONCABqy-1bGwkmDiRRZZ3Qdxov6Tuog5QjE0nV3i5g"
+    },  
     {
       "name": "Router: 🕹♌️🤱🌡 (New Testnet Deploy 08.11.2024)",
       "minter": "EQDA-TONcOp2IIqfpkGnL2fInc-Cm-ZCS5uy_EF_B3etN1Uv"

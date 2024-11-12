@@ -1,7 +1,7 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode, Slice } from "@ton/core";
 import { ContractErrors, ContractOpcodes, OpcodesLookup } from "./opCodes";
 import { ContractMessageMeta, DummyCell } from "./DummyCell";
-import { nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract";
+import { BLACK_HOLE_ADDRESS, nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract";
 import { FEE_DENOMINATOR, IMPOSSIBLE_FEE } from "./frontmath/frontMath";
 
 /** Initial data structures and settings **/
@@ -313,20 +313,23 @@ export class RouterV3Contract implements Contract {
         newFlags? : bigint
     }
     {
-        let s = body.beginParse()
+         let s = body.beginParse()
         const op       = s.loadUint(32)
         if (op != ContractOpcodes.ROUTERV3_CHANGE_PARAMS)
             throw Error("Wrong opcode")
 
         const query_id = s.loadUint(64)
         const hasNewFlags = s.loadBit()                
-        const newFlags = hasNewFlags ? s.loadUintBig(64) : undefined
+        const newFlagsV = s.loadUintBig(64)
+        const newFlags = hasNewFlags ? newFlagsV : undefined
 
-        const hasPoolFactory = s.loadBit()        
-        const newPoolFactory = hasPoolFactory ? s.loadAddress() : undefined
+        const hasPoolFactory = s.loadBit()      
+        const newPoolFactoryV = s.loadAddress()
+        const newPoolFactory = hasPoolFactory ? newPoolFactoryV : undefined
 
         const hasPoolAdmin = s.loadBit()
-        const newPoolAdmin = hasPoolAdmin ? s.loadAddress() : undefined
+        const newPoolAdminV = s.loadAddress()
+        const newPoolAdmin = hasPoolAdmin ? newPoolAdminV : undefined
         
         return {newPoolAdmin, newPoolFactory, newFlags}
     }

@@ -574,6 +574,15 @@ const validateValue = (fieldName: string, value: string, fieldType: FieldType): 
     const parseBigInt = (inputAmount: string): ValidatedValue => {
         try {
             const units = BigInt(inputAmount);
+            return makeValue(units);
+        } catch (e: any) {
+            return makeError('Invalid amount');
+        }
+    }
+
+    const parsePositiveBigInt = (inputAmount: string): ValidatedValue => {
+        try {
+            const units = BigInt(inputAmount);
 
             if (units <= 0) {
                 return makeError('Enter positive amount');
@@ -613,7 +622,10 @@ const validateValue = (fieldName: string, value: string, fieldType: FieldType): 
             return parseAmount(value, 9);
 
         case 'Jetton':
-            return parseBigInt(value);
+            return parsePositiveBigInt(value);
+
+        case 'PositiveBigInt':
+            return parsePositiveBigInt(value);
 
         case 'BigInt':
             return parseBigInt(value);

@@ -51,10 +51,10 @@ export class AMMOrders {
                 name: `Deploy Router v=${ContractDict.emojiHash}`,
                 fields: {
                     amountTW: { name: 'TON for pTon Wallet Deploy', type: 'TON', default : '0.05' },
-                    amountRD: { name: 'TON Amount for Router'     , type: 'TON', default : '0.08' },
+                    amountRD: { name: 'TON Amount for Router'     , type: 'TON', default : '0.085' },
                     poolAdmin:   { name: 'Pool Admin Contract'    , type: 'Address'},                    
                     poolFactory: { name: 'Pool Factory Contract'  , type: 'Address'},
-                    nonce : { name: 'Nonce', type: 'BigInt' }
+                    nonce : { name: 'Nonce', type: 'PositiveBigInt' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     let buffer;
@@ -73,7 +73,7 @@ export class AMMOrders {
 
                     let routerConfig : RouterV3ContractConfig = {
                         adminAddress : multisigAddress,
-                        poolAdmin    : values.poolAdmin.address,
+                        poolAdminAddress   : values.poolAdmin.address,
                         poolFactoryAddress : values.poolFactory.address,
                 
                         poolv3_code : poolCell,    
@@ -115,11 +115,12 @@ export class AMMOrders {
                 fields: {
                     amount: { name: 'TON Amount for Factory'     , type: 'TON', default : '0.08' },
                     router: { name: 'Router', type: 'Address'},
-                    nonce : { name: 'Nonce', type: 'BigInt' }
+                    nonce : { name: 'Nonce', type: 'PositiveBigInt' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
-                    let buffer = Buffer.from(ContractDict.PoolFactoryContract, "base64")
-                    let poolFactoryCell : Cell = Cell.fromBoc(buffer)[0]
+                    let poolFactoryCell  : Cell = Cell.fromBoc(Buffer.from(ContractDict.PoolFactoryContract, "base64"))[0]
+                    let factoryOrderCell : Cell = Cell.fromBoc(Buffer.from(ContractDict.FactoryOrderContract, "base64"))[0]
+                    
 
                     const attributes = [ {"trait_type": "DEX", "value": "TONCO" }]
 
@@ -145,6 +146,8 @@ export class AMMOrders {
                     let poolFactoryConfig : PoolFactoryContractConfig = {
                         adminAddress  : multisigAddress,  
                         routerAddress : values.router.address,  
+
+                        orderCode : factoryOrderCell,
                         nftv3Content  : nftContentPacked,
                         nftv3itemContent : nftItemContentPacked
                        
@@ -187,7 +190,7 @@ export class AMMOrders {
                 }
             },
             {
-                name: 'Change Router Admin',
+                name: 'Change Router Admin (Start. 2 Day Timelock)',
                 fields: {
                     router   : { name: 'Router', type: 'Address' },
                     amount   : { name: 'TON Amount', type: 'TON', default : '0.1' },
@@ -197,42 +200,47 @@ export class AMMOrders {
                     return {
                         toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
-                        body: RouterV3Contract.changeAdminMessage(values.newAdmin.address)
+                        body: RouterV3Contract.changeAdminStartMessage(values.newAdmin.address)
                     };
                 }
             },
             {
-                name: 'Change Router Flags',
+                name: 'Change Router Admin (Commit)',
                 fields: {
                     router   : { name: 'Router', type: 'Address' },
                     amount   : { name: 'TON Amount', type: 'TON', default : '0.1' },
-                    newFlags : { name: 'New Flags', type: 'BigInt' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     return {
                         toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
-                        body: RouterV3Contract.changeFlagsMessage(values.newFlags)
+                        body: RouterV3Contract.changeAdminStartMessage(values.newAdmin.address)
                     };
                 }
             },
             {
-                name: 'Change Router Pool Factory',
+                name: 'Change Router Params (Flags, Pool Admin, Pool Factory)',
                 fields: {
                     router   : { name: 'Router', type: 'Address' },
                     amount   : { name: 'TON Amount', type: 'TON', default : '0.1' },
-                    newPoolFactory : { name: 'New Pool Factory', type: 'Address' }
+                    newFlags : { name: 'New Flags (negative for unchanged)', type: 'BigInt' },
+                    newPoolAdmin : { name: 'New Pool Admin', type: 'Address' },
+                    newPoolFactory : { name: 'New Pool Factory', type: 'Address' }, 
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     return {
                         toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
-                        body: RouterV3Contract.changePoolFactoryMessage(values.newPoolFactory.address)
+                        body: RouterV3Contract.changeRouterParamMessage({
+                            newFlags : values.newFlags >= 0 ? values.newFlags : undefined,
+                            newPoolAdmin : values.newPoolAdmin.address,
+                            newPoolFactory : values.newPoolFactory.address,                            
+                        })
                     };
                 }
-            },
+            },            
             {
-                name: 'Deploy Pool',
+                name: 'Deploy Pool (from Admin)',
                 fields: {
                     amount: { name: 'TON Amount',     type: 'TON'     , default : "0.2" },
                     router: { name: 'Router Address', type: 'Address' },
@@ -633,27 +641,28 @@ export class AMMOrders {
         }
 
         try {
-            let p = RouterV3Contract.unpackChangeAdminMessage(cell)
+            let p = RouterV3Contract.unpackChangeAdminStartMessage(cell)
             const newAdminS = await formatAddressAndUrl(p.newAdmin, isTestnet)
             return `Order to change admin for the Router <br/>` + 
                    `New Admin: ${newAdminS}`
         } catch (e) {
         }
 
-
         try {
-            let p = RouterV3Contract.unpackChangePoolFactoryMessage(cell)
-            const newPoolFactoryS = await formatAddressAndUrl(p.newPoolFactory, isTestnet)
-            return `Order to change pool factory for the Router <br/>` + 
-                   `New Pool Factory: ${newPoolFactoryS}`
+            let p = RouterV3Contract.unpackChangeAdminCommitMessage(cell)
+            return `Order to commit admin change after 2 days for the Router <br/>`  
         } catch (e) {
         }
 
+
         try {
-            let p = RouterV3Contract.unpackChangeFlagsMessage(cell)
-            const newFlags = p.flags
-            return `Order to change Router Flags <br/>` + 
-                   `New Router Flags:  ${"0x" + newFlags.toString(16).padStart(16, "0")}`
+            let p = RouterV3Contract.unpackChangeRouterParamMessage(cell)
+            const newParams = await formatAddressAndUrl(p.newPoolFactory, isTestnet)
+
+            return `Order to change pool factory for the Router <br/>` + 
+                   `New Pool Flags: ${p.newFlags ? "0x" + p.newFlags.toString(16) : "unchanged"}</br>` + 
+                   `New Pool Admin:   ${p.newPoolAdmin ? await formatAddressAndUrl(p.newPoolAdmin, isTestnet) : "unchanged" } </br>` + 
+                   `New Pool Factory: ${p.newPoolFactory ? await formatAddressAndUrl(p.newPoolFactory, isTestnet) : "unchanged" } </br>` 
         } catch (e) {
         }
 
