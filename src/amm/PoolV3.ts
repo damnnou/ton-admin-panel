@@ -461,7 +461,8 @@ export class PoolV3 {
                 .storeAddress(targetRW.address)              // JettonWallet attached to Router is used to identify target token                  
                 .storeUint   (priceLimit, 160)               // Minimum/maximum price that we are ready to reach
                 .storeCoins  (minOutAmount ?? 0n)            // Minimum amount to get back
-                .storeAddress(walletOpened.address)          // Address to receive result of the swap                              
+                .storeAddress(walletOpened.address)          // Address to receive result of the swap   
+                .storeUint   (0,1)                           // Payload Maybe Ref
             .endCell()
 
         let swapResult 

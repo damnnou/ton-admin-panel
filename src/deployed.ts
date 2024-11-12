@@ -40,11 +40,11 @@ export const jettonListTestnet = [
     },
 
     {
-      "name": "BLACK_HOLE_ADDRESS",
+      "name": "🌀BLACK_HOLE_ADDRESS",
       "minter": BLACK_HOLE_ADDRESS.toString()
     },
     {
-      "name": "BLACK_HOLE_ADDRESS1",
+      "name": "🌀BLACK_HOLE_ADDRESS1",
       "minter": BLACK_HOLE_ADDRESS1.toString()
     },
 

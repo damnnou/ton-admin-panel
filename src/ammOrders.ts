@@ -52,7 +52,8 @@ export class AMMOrders {
                 fields: {
                     amountTW: { name: 'TON for pTon Wallet Deploy', type: 'TON', default : '0.05' },
                     amountRD: { name: 'TON Amount for Router'     , type: 'TON', default : '0.08' },
-                    poolFactory: { name: 'Pool Factory Contract'     , type: 'Address'},
+                    poolAdmin:   { name: 'Pool Admin Contract'    , type: 'Address'},                    
+                    poolFactory: { name: 'Pool Factory Contract'  , type: 'Address'},
                     nonce : { name: 'Nonce', type: 'BigInt' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
@@ -72,6 +73,7 @@ export class AMMOrders {
 
                     let routerConfig : RouterV3ContractConfig = {
                         adminAddress : multisigAddress,
+                        poolAdmin    : values.poolAdmin.address,
                         poolFactoryAddress : values.poolFactory.address,
                 
                         poolv3_code : poolCell,    
@@ -126,7 +128,7 @@ export class AMMOrders {
                     let nftContentToPack : { [s: string]: string | undefined } =     {  
                         name   : "Pool Minter",
                         description : "TONCO Pool LP Minter for", 
-                        cover_image : "https://tonco.io/static/tonco-logo-nft.png", 
+                        cover_image : "https://tonco.io/static/tonco-cover.png", 
                         image: "https://tonco.io/static/tonco-logo-nft.png" 
                     }
                     const nftContentPacked: Cell = packJettonOnchainMetadata(nftContentToPack)
@@ -163,6 +165,25 @@ export class AMMOrders {
                         init: poolFactoryStateInit,
                         body: beginCell().endCell()
                     }]
+                }
+            },
+            {
+                name: 'Collect Router Excess Gas',
+                fields: {
+                    pool:   { name: 'Router Address',  type: 'Address' },
+                    amount: { name: 'TON Amount',    type: 'TON'     , default : "0.11"},
+                },
+                makeMessage: async (values, multisigAddress : Address) => {
+                    const msg_body = beginCell()
+                        .storeUint(ContractOpcodes.ROUTERV3_RESET_GAS, 32) // OP code
+                        .storeUint(0, 64) // query_id          
+                    .endCell();
+
+                    return {
+                        toAddress: values.pool,
+                        tonAmount: values.amount,
+                        body: msg_body
+                    };
                 }
             },
             {
@@ -444,7 +465,7 @@ export class AMMOrders {
                     amount: { name: 'TON Amount', type: 'TON' },
                     nftName        : { name: 'NFT Name (empty for unchanged)', type: 'String' },
                     nftDescription : { name: 'NFT description(empty for unchanged)', type: 'String' },
-                    nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-logo-nft.png"},
+                    nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-logo-nft.png"}
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     const msg_body = beginCell()
@@ -463,11 +484,30 @@ export class AMMOrders {
                 name: 'Collect Pool Protocol Fee',
                 fields: {
                     pool:   { name: 'Pool Address',  type: 'Address' },
-                    amount: { name: 'TON Amount',    type: 'TON'     },
+                    amount: { name: 'TON Amount',    type: 'TON'     , default : "0.11"},
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     const msg_body = beginCell()
                         .storeUint(ContractOpcodes.POOLV3_COLLECT_PROTOCOL, 32) // OP code
+                        .storeUint(0, 64) // query_id          
+                    .endCell();
+
+                    return {
+                        toAddress: values.pool,
+                        tonAmount: values.amount,
+                        body: msg_body
+                    };
+                }
+            },
+            {
+                name: 'Collect Pool Excess Gas',
+                fields: {
+                    pool:   { name: 'Pool Address',  type: 'Address' },
+                    amount: { name: 'TON Amount',    type: 'TON'     , default : "0.11"},
+                },
+                makeMessage: async (values, multisigAddress : Address) => {
+                    const msg_body = beginCell()
+                        .storeUint(ContractOpcodes.POOLV3_RESET_GAS, 32) // OP code
                         .storeUint(0, 64) // query_id          
                     .endCell();
 
@@ -748,7 +788,10 @@ export class AMMOrders {
     
         try {
             let p = PoolV3Contract.unpackCollectProtocolMessage(cell)
-            return `Collect protocol fees`
+            let dest = msg.info.dest as Address
+            let destS = await formatAddressAndUrl(dest, isTestnet)
+
+            return `Collect protocol fees for ${destS}`
         } catch (e) {
         }   
     

@@ -5,6 +5,9 @@ import { ContractOpcodes } from "./opCodes";
 export type PoolFactoryContractConfig = {    
     adminAddress  : Address,  
     routerAddress : Address,  
+    tonPrice? : bigint,
+
+    orderCode : Cell,
     nftv3Content  : Cell,
     nftv3itemContent : Cell
 }
@@ -14,6 +17,10 @@ export function poolFactoryContractConfigToCell(config: PoolFactoryContractConfi
     return beginCell()
         .storeAddress(config.adminAddress)
         .storeAddress(config.routerAddress)
+        .storeCoins(config.tonPrice ?? 0)
+
+        .storeRef(config.orderCode)
+
         .storeRef(config.nftv3Content)
         .storeRef(config.nftv3itemContent)
     .endCell()    
@@ -148,10 +155,21 @@ export class PoolFactoryContract implements Contract {
     async getPoolFactoryData(provider: ContractProvider) {
         const { stack } = await provider.get("getPoolFactoryData", []);
         return {
-            admin_address      : stack.readAddress(),
-            router_address     : stack.readAddress(),
-            nftv3_content : stack.readCell(), 
+            admin_address     : stack.readAddress(),
+            router_address    : stack.readAddress(),
+            ton_price         : stack.readBigNumber(),
+            nftv3_content     : stack.readCell(), 
             nftv3item_content : stack.readCell(),    
+        }
+    }
+
+    async getOrderAddress(provider: ContractProvider, jetton0WalletAddr: Address, jetton1WalletAddr : Address) {
+        const { stack } = await provider.get("getOrderAddress", [
+            { type: 'slice', cell: beginCell().storeAddress(jetton0WalletAddr).endCell() },
+            { type: 'slice', cell: beginCell().storeAddress(jetton1WalletAddr).endCell() }
+        ]);
+        return {
+            order_address     : stack.readAddress()
         }
     }
 

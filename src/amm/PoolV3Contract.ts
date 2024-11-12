@@ -87,8 +87,8 @@ export function embedJettonData (content :Cell, jetton0Name : string, decimals0:
 export let nftContentToPack : { [s: string]: string | undefined } = {  
     name   : "AMM Pool Minter", 
     description : "AMM Pool LP Minter", 
-    cover_image : "https://tonco.io/static/tonco-cover.jpeg", 
-    image: "https://tonco.io/static/tonco-astro.png" 
+    cover_image : "https://tonco.io/static/tonco-cover.png", 
+    image: "https://tonco.io/static/tonco-logo-nft.png" 
 }
 
 
@@ -99,7 +99,7 @@ export const nftContentPackedDefault: Cell =  packJettonOnchainMetadata(nftConte
 export let nftItemContentToPack : { [s: string]: string | undefined } = {  
     name   : "AMM Pool Position", 
     description : "LP Position", 
-    image: "https://tonco.io/static/tonco-astro.png",
+    image: "https://tonco.io/static/tonco-logo-nft.png",
     //content_url : "https://tonco.io/static/tonco-astro.png", 
     //content_type : "image/png"
 }
@@ -624,31 +624,6 @@ export class PoolV3Contract implements Contract {
             seqno    :  stack.readBigNumber(),
         }        
     }
-
-    /* This is ston.fi version of the data query */
-    /* DEPRECATED
-    async getPoolData(provider: ContractProvider) {
-        const { stack } = await provider.get("get_pool_data", []);
-    
-        return {
-            reserve0 : stack.readBigNumber(),
-            reserve1 : stack.readBigNumber(),
-
-            jetton0_wallet : stack.readAddress(),
-            jetton1_wallet : stack.readAddress(),
-
-            lp_fee_base    : stack.readNumber(),   
-            protocol_fee   : stack.readNumber(),   
-            lp_fee_current : stack.readNumber(),
-
-            admin_address  : stack.readAddress(),
-
-            collectedProtocolFee0 : stack.readBigNumber(), 
-            collectedProtocolFee1 : stack.readBigNumber(), 
-        }
-    }
-    */
-
 
     /* Tick related getters */
     /** 

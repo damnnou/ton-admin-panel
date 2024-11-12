@@ -7,7 +7,9 @@ import { FEE_DENOMINATOR, IMPOSSIBLE_FEE } from "./frontmath/frontMath";
 /** Initial data structures and settings **/
 export type RouterV3ContractConfig = {    
     adminAddress : Address,  
-    poolFactoryAddress : Address,  
+    poolAdminAddress? : Address,  
+    
+    poolFactoryAddress : Address,      
     flags? : bigint,
     poolv3_code : Cell;    
     accountv3_code : Cell;
@@ -19,12 +21,21 @@ export type RouterV3ContractConfig = {
 export function routerv3ContractConfigToCell(config: RouterV3ContractConfig): Cell {
     return beginCell()
         .storeAddress(config.adminAddress)
+        .storeAddress(config.poolAdminAddress ?? config.adminAddress) 
         .storeAddress(config.poolFactoryAddress)
         .storeUint(config.flags ?? 0, 64)        
-        .storeUint(0, 64)        
-        .storeRef(config.poolv3_code)
-        .storeRef(config.accountv3_code)
-        .storeRef(config.position_nftv3_code)
+        .storeUint(0, 64)      
+
+        .storeRef(beginCell()
+            .storeRef(config.poolv3_code)
+            .storeRef(config.accountv3_code)
+            .storeRef(config.position_nftv3_code)
+        .endCell())
+        .storeRef(beginCell()
+            .storeUint(0,1)
+            .storeUint(0,2)
+            .storeUint(0,64)
+        .endCell())
         .storeUint(config.nonce ?? 0, 64)
     .endCell()    
 }
@@ -37,9 +48,11 @@ export function routerv3ContractCellToConfig(c: Cell): RouterV3ContractConfig {
     const flags = s.loadUintBig(64)
     
     const seqno = s.loadUintBig(64)
-    const poolv3_code         : Cell = s.loadRef()
-    const accountv3_code      : Cell = s.loadRef()
-    const position_nftv3_code : Cell = s.loadRef()  
+
+    const subcodes = s.loadRef().beginParse();
+    const poolv3_code         : Cell = subcodes.loadRef()
+    const accountv3_code      : Cell = subcodes.loadRef()
+    const position_nftv3_code : Cell = subcodes.loadRef()  
     
     let nonce : bigint | undefined = undefined
     if (s.remainingBits !=0 ) {
@@ -218,79 +231,114 @@ export class RouterV3Contract implements Contract {
         return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
     }
 
-    static changeAdminMessage(newAdmin : Address) : Cell {
-        return beginCell()
-            .storeUint(ContractOpcodes.ROUTERV3_CHANGE_ADMIN, 32) // OP code
+    /* =============  CHANGE ADMIN =============  */
+
+    static changeAdminStartMessage(newAdmin : Address | null) : Cell {
+        let msg = beginCell()
+            .storeUint(ContractOpcodes.ROUTERV3_CHANGE_ADMIN_START, 32) // OP code
             .storeUint(0, 64) // QueryID what for?
-            .storeAddress(newAdmin)
-        .endCell();
+        if (newAdmin == null) {
+            msg.storeUint(0,2)
+        } else {
+            msg.storeAddress(newAdmin)    
+        }
+        return msg.endCell();
     }
 
-    static unpackChangeAdminMessage( body :Cell) : { newAdmin : Address }
+    static unpackChangeAdminStartMessage( body :Cell) : { newAdmin : Address | null }
     {
         let s = body.beginParse()
         const op       = s.loadUint(32)
-        if (op != ContractOpcodes.ROUTERV3_CHANGE_ADMIN)
+        if (op != ContractOpcodes.ROUTERV3_CHANGE_ADMIN_START)
             throw Error("Wrong opcode")
 
         const query_id = s.loadUint(64)
+        if (s.preloadUint(2) == 0) {
+            return {newAdmin : null}    
+        } 
         const newAdmin = s.loadAddress()
         return {newAdmin}
     }
 
-    async sendChangeAdmin(provider: ContractProvider, sender: Sender, value: bigint, newAdmin : Address) {
-        const msg_body = RouterV3Contract.changeAdminMessage(newAdmin)
+    async sendChangeAdminStart(provider: ContractProvider, sender: Sender, value: bigint, newAdmin : Address) {
+        const msg_body = RouterV3Contract.changeAdminStartMessage(newAdmin)
         return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
     }
 
-    static changePoolFactoryMessage(newPoolFactory : Address) : Cell {
-        return beginCell()
-            .storeUint(ContractOpcodes.ROUTERV3_CHANGE_POOL_FACTORY, 32) // OP code
+    static changeAdminCommitMessage() : Cell {
+        let msg = beginCell()
+            .storeUint(ContractOpcodes.ROUTERV3_CHANGE_ADMIN_COMMIT, 32) // OP code
             .storeUint(0, 64) // QueryID what for?
-            .storeAddress(newPoolFactory)
-        .endCell();
+        .endCell()          
+        return msg;
     }
 
-    static unpackChangePoolFactoryMessage( body :Cell) : { newPoolFactory : Address }
+    static unpackChangeAdminCommitMessage( body :Cell) : {  }
     {
         let s = body.beginParse()
         const op       = s.loadUint(32)
-        if (op != ContractOpcodes.ROUTERV3_CHANGE_POOL_FACTORY)
+        if (op != ContractOpcodes.ROUTERV3_CHANGE_ADMIN_COMMIT)
             throw Error("Wrong opcode")
-
         const query_id = s.loadUint(64)
-        const newPoolFactory = s.loadAddress()
-        return {newPoolFactory}
+        return {}
     }
 
-    async sendChangePoolFactory(provider: ContractProvider, sender: Sender, value: bigint, newPoolFactory : Address) {
-        const msg_body = RouterV3Contract.changeAdminMessage(newPoolFactory)
+    async sendChangeAdminCommit(provider: ContractProvider, sender: Sender, value: bigint) {
+        const msg_body = RouterV3Contract.changeAdminCommitMessage()
         return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
     }
 
+    /* =============  CHANGE PARAMS =============  */
 
-    static changeFlagsMessage(flags : bigint) : Cell {
+    static changeRouterParamMessage(opts : {
+        newPoolAdmin? : Address        
+        newPoolFactory? : Address
+        newFlags? : bigint
+    } ) : Cell {
         return beginCell()
-            .storeUint(ContractOpcodes.ROUTERV3_CHANGE_FLAGS, 32) // OP code
-            .storeUint(0, 64) // QueryID what for?
-            .storeUint(flags, 64)
+            .storeUint(ContractOpcodes.ROUTERV3_CHANGE_PARAMS, 32) // OP code
+            .storeUint(0, 64) // QueryID what for?           
+            .storeUint(opts.newFlags ? 1 : 0, 1)
+            .storeUint(opts.newFlags ?? 0, 64)
+            .storeUint(opts.newPoolFactory ? 1 : 0, 1)
+            .storeAddress(opts.newPoolFactory ?? BLACK_HOLE_ADDRESS)
+            .storeUint(opts.newPoolAdmin ? 1 : 0, 1)
+            .storeAddress(opts.newPoolAdmin ?? BLACK_HOLE_ADDRESS)            
         .endCell();
     }
 
-    static unpackChangeFlagsMessage( body :Cell) 
+    static unpackChangeRouterParamMessage( body :Cell) : {
+        newPoolAdmin? : Address        
+        newPoolFactory? : Address
+        newFlags? : bigint
+    }
     {
         let s = body.beginParse()
         const op       = s.loadUint(32)
-        if (op != ContractOpcodes.ROUTERV3_CHANGE_FLAGS)
+        if (op != ContractOpcodes.ROUTERV3_CHANGE_PARAMS)
             throw Error("Wrong opcode")
 
         const query_id = s.loadUint(64)
-        const flags = s.loadUintBig(64)
-        return { flags : flags }
+        const hasNewFlags = s.loadBit()                
+        const newFlags = hasNewFlags ? s.loadUintBig(64) : undefined
+
+        const hasPoolFactory = s.loadBit()        
+        const newPoolFactory = hasPoolFactory ? s.loadAddress() : undefined
+
+        const hasPoolAdmin = s.loadBit()
+        const newPoolAdmin = hasPoolAdmin ? s.loadAddress() : undefined
+        
+        return {newPoolAdmin, newPoolFactory, newFlags}
     }
 
-    async sendChangeFlagsFactory(provider: ContractProvider, sender: Sender, value: bigint, flags : bigint) {
-        const msg_body = RouterV3Contract.changeFlagsMessage(flags)
+    async sendChangeRouterParams(provider: ContractProvider, sender: Sender, value: bigint, 
+        opts : {
+            newPoolAdmin? : Address        
+            newPoolFactory? : Address
+            newFlags? : bigint
+        }
+    ) {
+        const msg_body = RouterV3Contract.changeRouterParamMessage(opts)
         return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
     }
 
@@ -299,6 +347,7 @@ export class RouterV3Contract implements Contract {
         const { stack } = await provider.get("getRouterState", []);
         return {
             admin       : stack.readAddress(),
+            pool_admin  : stack.readAddress(),            
             pool_factory: stack.readAddress(),
             flags       : stack.readBigNumber(),
             pool_seqno  : stack.readBigNumber()
@@ -412,25 +461,26 @@ export class RouterV3Contract implements Contract {
 
         if (op == ContractOpcodes.POOLV3_FUND_ACCOUNT)
         {
-            result.push({ name:`op`,            value: `${p.loadUint(32) }`, type:`Uint(32) op`})  
-            result.push({ name:`jetton_target_w`, value: `${p.loadAddress()}`, type:`Address() `})              
-            result.push({ name:`enough0`,       value: `${p.loadCoins()  }`, type:`Coins()  `})  
-            result.push({ name:`enough1`,       value: `${p.loadCoins()  }`, type:`Coins()  `})
-            result.push({ name:`liquidity`,     value: `${p.loadUint(128)}`, type:`Uint(128)`}) 
-            result.push({ name:`tickLower`,     value: `${p.loadInt(24)  }`, type:`Int(24)  `})
-            result.push({ name:`tickUpper`,     value: `${p.loadInt(24)  }`, type:`Int(24)  `})
+            result.push({ name:`op`,            value: `${p.loadUint(32)    }`, type:`Uint(32) op`})  
+            result.push({ name:`jetton_target_w`, value: `${p.loadAddress() }`, type:`Address() `})              
+            result.push({ name:`enough0`,       value: `${p.loadCoins()     }`, type:`Coins()  `})  
+            result.push({ name:`enough1`,       value: `${p.loadCoins()     }`, type:`Coins()  `})
+            result.push({ name:`liquidity`,     value: `${p.loadUintBig(128)}`, type:`Uint(128)`}) 
+            result.push({ name:`tickLower`,     value: `${p.loadInt(24)     }`, type:`Int(24)  `})
+            result.push({ name:`tickUpper`,     value: `${p.loadInt(24)     }`, type:`Int(24)  `})
         }
         
 
         if (op == ContractOpcodes.ROUTERV3_PAY_TO)
         {          
-            result.push({ name:`op`,              value: `${p.loadUint(32)  }`, type:`Uint(32) op`})  
-            result.push({ name:`query_id`,        value: `${p.loadUint(64)  }`, type:`Uint(64) `})             
-            result.push({ name:`owner`,           value: `${p.loadAddress() }`, type:`Address()`})  
+            result.push({ name:`op`,              value: `${p.loadUint(32)    }`, type:`Uint(32) op`})  
+            result.push({ name:`query_id`,        value: `${p.loadUintBig(64) }`, type:`Uint(64) `})             
+            result.push({ name:`owner0`,          value: `${p.loadAddress()   }`, type:`Address()`})  
+            result.push({ name:`owner1`,          value: `${p.loadAddress()   }`, type:`Address()`})  
             
             let exit_code = p.preloadUint(32)
-            result.push({ name:`exit_code`,       value: `${p.loadUint(32)  }`, type:`Uint(32) `})  
-            result.push({ name:`seqno`,           value: `${p.loadUint(64)  }`, type:`Uint(64), Indexer`})  
+            result.push({ name:`exit_code`,       value: `${p.loadUint(32)    }`, type:`Uint(32) `})  
+            result.push({ name:`seqno`,           value: `${p.loadUintBig(64) }`, type:`Uint(64), Indexer`})  
 
             let hasCoinsInfo    = p.preloadBit();
             result.push({ name:`hasCoinsInfo`,       value: `${p.loadBoolean()  }`, type:`Boolean() `})  
@@ -470,11 +520,15 @@ export class RouterV3Contract implements Contract {
             result.push({ name:`op`,                value: `${p.loadUint(32)  }` , type:`Uint(32) op`})
         }
 
-        if (op == ContractOpcodes.ROUTERV3_CHANGE_ADMIN) {
+        if (op == ContractOpcodes.ROUTERV3_CHANGE_ADMIN_START) {
             result.push({ name:`op`,               value: `${p.loadUint(32)  }`  , type:`Uint(32) op`})
             result.push({ name:`new_admin`,        value: `${p.loadAddress() }`  , type:`Address()`})
-
         }
+
+        if (op == ContractOpcodes.ROUTERV3_CHANGE_ADMIN_COMMIT) {
+            result.push({ name:`op`,               value: `${p.loadUint(32)  }`  , type:`Uint(32) op`})
+        }
+
 
         if (op == ContractOpcodes.POOLV3_SWAP)
         {      
