@@ -171,9 +171,22 @@ export const jettonListTestnet = [
 
 
   export const jettonListMainnet = [ 
+    
+    {
+      "name": "Router: 🪡↘🤫📀 (Mainnet Deploy 12.11.2024)",
+      "minter": "UQBu-T0NcoSfIveS6nXpsshKxBRTZKB83XW-gIunhQwDnKa0"
+    },
     {
         "name": "Router:💧🎪🦺🚔",
         "minter": "EQBluCPWA7iw9kGJUC2mGmFa1dbhruPgwhQQN675Muimi_4V"
+    },
+    {
+      "name": "🌀BLACK_HOLE_ADDRESS",
+      "minter": BLACK_HOLE_ADDRESS.toString()
+    },
+    {
+      "name": "🌀BLACK_HOLE_ADDRESS1",
+      "minter": BLACK_HOLE_ADDRESS1.toString()
     },
     {
         "name": "pTon",
