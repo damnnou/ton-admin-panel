@@ -9,7 +9,7 @@ import { Address, beginCell, Cell, contractAddress, fromNano, MessageRelaxed, St
 import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
-import { encodePriceSqrt, FEE_DENOMINATOR, getApproxFloatPrice } from "./amm/frontmath/frontMath"
+import { encodePriceSqrt, FEE_DENOMINATOR, getApproxFloatPrice, TickMath } from "./amm/frontmath/frontMath"
 import { nftContentToPack, PoolV3Contract, poolv3StateInitConfig } from "./amm/PoolV3Contract"
 import { PoolFactoryContract, PoolFactoryContractConfig, poolFactoryContractConfigToCell } from "./amm/PoolFactoryContract"
 
@@ -393,12 +393,14 @@ export class AMMOrders {
                     pool:           { name: 'Pool Address',   type: 'Address' },
                     price1reserve : { name: 'price.reserve1', type: 'BigInt' , default : "1" },
                     price0reserve : { name: 'price.reserve0', type: 'BigInt' , default : "1" },
-                    amount:         { name: 'TON Amount',     type: 'TON'},
+                    amount:         { name: 'TON Amount',     type: 'TON', default : "0.02" },
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
-                    const reserve1 = BigInt(values.price1reserve)
-                    const reserve0 = BigInt(values.price0reserve)
-                    const msg_body = PoolV3Contract.reinitMessage({sqrtPriceX96 : encodePriceSqrt(reserve1, reserve0)})
+                    const reserve1 : bigint = BigInt(values.price1reserve)
+                    const reserve0 : bigint = BigInt(values.price0reserve)
+                    const sqrtPriceX96 : bigint = encodePriceSqrt(reserve1, reserve0)
+                    console.log("Sqrt price :", sqrtPriceX96)
+                    const msg_body = PoolV3Contract.reinitMessage({sqrtPriceX96 : sqrtPriceX96})
                     return {
                         toAddress: values.pool,
                         tonAmount: values.amount,
@@ -760,12 +762,17 @@ export class AMMOrders {
             }
 
             // unpackJettonOnchainMetadata(p.nftItemContentPacked) }
+            let priceInfo
+            if (p.sqrtPriceX96 != undefined) {
+                priceInfo = `1 Jetton0 = ${getApproxFloatPrice(p.sqrtPriceX96)} Jetton1  (tick = ${TickMath.getTickAtSqrtRatio(p.sqrtPriceX96)})`
+            }
+
 
             return `Change pool parameters:<br/>` +
             `<ol>` +
             `  <li>Pool Active/Locked : ${p.activate_pool == undefined ? "unchanged" : p.activate_pool } </li> ` +
             `  <li>Pool Tick Spacing  : ${p.tickSpacing == undefined ? "unchanged" : p.tickSpacing } </li> ` +
-            `  <li>Pool Price  : ${p.sqrtPriceX96 == undefined ? "unchanged" : p.sqrtPriceX96 } </li> ` +
+            `  <li>Pool Price  : ${p.sqrtPriceX96 == undefined ? "unchanged" : ("" + p.sqrtPriceX96.toString() + "  (" + priceInfo + ")" )} </li> ` +
             `  <li>Pool Controller  : ${p.controller == undefined ? "unchanged" : p.controller } </li> ` +
             `  <li>Pool Admin  : ${p.admin == undefined ? "unchanged" : p.controller } </li> ` +
             `  <li>Pool Collection Metadata : ${p.nftContentPacked == undefined ? "unchanged" : "CHANGED:" +  (this.renderNFTContent(unpackedCollection))} </li> ` +

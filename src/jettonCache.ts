@@ -1,6 +1,6 @@
 import { Address } from "@ton/core"
 import { JettonMinter } from "./jetton/JettonMinter"
-import { MyNetworkProvider } from "./utils/MyNetworkProvider"
+import { MyNetworkProvider, sendToTonApi } from "./utils/MyNetworkProvider"
 import { unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 import { PTonMinterV2 } from "./amm/common/PTonMinterV2";
 import { escapeHtml } from "./utils/utils";
@@ -27,15 +27,23 @@ export async function getJettonMetadata(minterAddress : Address, isTestnet : boo
         if (metadata.uri) {
             console.log("We have offchain metadata at", )
 
+            /* TODO: Ask from the begining */
             try {
-                const response = await fetch(metadata.uri);
+                const result = await sendToTonApi("jettons/" + minterAddress.toRawString(), null , isTestnet)
+                console.log(result)
+
+                //(await client.jettons.getJettonInfo(jettonMinter)).metadata;
+                /*
+                //const response = await fetch(metadata.uri );
+                const response = await fetch("https://cors-anywhere.herokuapp.com/" + metadata.uri)
+                // https://cors-anywhere.herokuapp.com/http://example.com
                 
                 if (!response.ok) {
                   throw new Error(`Error fetching data: ${response.statusText}`);
                 }
             
-                const data = await response.json();  // Parse the JSON
-                metadata = data
+                const data = await response.json();  // Parse the JSON*/
+                metadata = result.metadata 
               } catch (error) {
                 console.error("Failed to download and parse JSON", error);
                 throw error;  // Rethrow the error for further handling

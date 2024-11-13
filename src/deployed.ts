@@ -6,7 +6,7 @@ export function getPTonMinterAddress (isTestnet : boolean) {
     if (isTestnet) {
         return Address.parse("EQBlde83gVhXQKGogwCxKbiyB37N5K0mX4YcC9XTR1iFX1iO")
     } else {
-        return Address.parse("EQBlde83gVhXQKGogwCxKbiyB37N5K0mX4YcC9XTR1iFX1iO")
+        return Address.parse("EQCUnExmdgwAKADi-j2KPKThyQqTc7U650cgM0g78UzZXn9J")
     }
 }
 
