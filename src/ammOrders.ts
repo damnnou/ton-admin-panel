@@ -252,8 +252,12 @@ export class AMMOrders {
 
                     price1reserve : { name: 'price.reserve1', type: 'BigInt' , default : "1" },
                     price0reserve : { name: 'price.reserve0', type: 'BigInt' , default : "1" },
-                    
+                                       
                     controller     : { name: 'Controller', type: 'Address' },
+
+                    activeFee:   { name: 'Active Fee'  , type: 'BigInt', default : "30"   },
+                    protocolFee: { name: 'Protocol Fee', type: 'BigInt', default : "1000" },
+
                     nftName        : { name: 'NFT Name (empty for default)', type: 'String' },
                     nftDescription : { name: 'NFT description(empty for default)', type: 'String' },
                     nftImagePath   : { name: 'NFT Image URL', type: 'String' , default: "https://tonco.io/static/tonco-logo-nft.png"},
@@ -344,6 +348,10 @@ export class AMMOrders {
                             nftContentPacked : nftContentPacked,
                             nftItemContentPacked : nftItemContentPacked,
                             controllerAddress : values.controller.address,
+
+                            protocolFee : Number(values.protocolFee),
+                            lpFee       : Number(values.activeFee),
+                            currentFee  : Number(values.activeFee)
                         }
                     )
 
@@ -708,6 +716,11 @@ export class AMMOrders {
             let priceValue = getApproxFloatPrice(p.sqrtPriceX96) * (10 ** Number(logicalDecimals0)) / (10 ** Number(logicalDecimals1))
             let priceText = `1${logicalJetton0Name} =  ${priceValue}${logicalJetton1Name}`
 
+            let baseFee     = p.lpFee    / FEE_DENOMINATOR * 100
+            let activeFee   = p.currentFee / FEE_DENOMINATOR * 100
+            let protocolFeeOfActive =  p.protocolFee / FEE_DENOMINATOR * 100
+            let protocolFee = p.currentFee * p.protocolFee / (FEE_DENOMINATOR * FEE_DENOMINATOR) * 100
+
             return `Create New Pool For<br/>` + 
             `  <b>Minter1:</b> ${jetton0MinterS} &nbsp;<span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]} [d:${metadata0["decimals"]}]</span><br/>` + 
             `  <b>Wallet1:</b> ${jetton0WalletS}<br/>` + 
@@ -719,6 +732,13 @@ export class AMMOrders {
             `  Price : ${p.sqrtPriceX96} ( ${priceText} ) <br/>` +
     
             `  Controller :  ${controllerS}<br/>` +           
+
+            `<table>` +
+            `<tr><td>Active fee   <td/> ${p.currentFee}  <td/> | <td/>${activeFee}   % <td/></tr>` + 
+            `<tr><td>Base fee     <td/> ${p.lpFee}       <td/> | <td/>${baseFee}     % <td/></tr>` + 
+            `<tr><td>Protocol Fee <td/> ${p.protocolFee} <td/> | <td/>of current Fee ${protocolFeeOfActive} %, of swap amount ${protocolFee} % <td/></tr>` + 
+            `</table>`+
+
             (this.renderNFTContent(nftUnpack)) +
             `          `+
             `  <div class="pair_line_s">`+

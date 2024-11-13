@@ -175,11 +175,7 @@ export const jettonListTestnet = [
     {
       "name": "Router: 🪡↘🤫📀 (Mainnet Deploy 12.11.2024)",
       "minter": "UQBu-T0NcoSfIveS6nXpsshKxBRTZKB83XW-gIunhQwDnKa0"
-    },
-    {
-        "name": "Router:💧🎪🦺🚔",
-        "minter": "EQBluCPWA7iw9kGJUC2mGmFa1dbhruPgwhQQN675Muimi_4V"
-    },
+    },    
     {
       "name": "🌀BLACK_HOLE_ADDRESS",
       "minter": BLACK_HOLE_ADDRESS.toString()
@@ -192,6 +188,10 @@ export const jettonListTestnet = [
         "name": "pTon",
         "minter": getPTonMinterAddress(false).toString()
     }, 
+    {
+      "minter": "EQDYsv6VQ7M37d7IyyQJrRJCfijjUns6zNVNEy6zzJzFIDs2",
+      "name": "BANGKOK",
+    },    
     {
         "minter": "EQAaauE_1aCVWmvrlf2_3pHlwzwi4NNrJcaa0vHuBTd15O8H",
         "name": "BTC-MT",
