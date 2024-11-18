@@ -4,7 +4,7 @@ import { BLACK_HOLE_ADDRESS, BLACK_HOLE_ADDRESS1 } from "./amm/PoolV3Contract"
 
 export function getPTonMinterAddress (isTestnet : boolean) {
     if (isTestnet) {
-        return Address.parse("EQBlde83gVhXQKGogwCxKbiyB37N5K0mX4YcC9XTR1iFX1iO")
+        return Address.parse("EQCUnExmdgwAKADi-j2KPKThyQqTc7U650cgM0g78UzZXn9J")
     } else {
         return Address.parse("EQCUnExmdgwAKADi-j2KPKThyQqTc7U650cgM0g78UzZXn9J")
     }
@@ -22,6 +22,11 @@ export function getJettonList (isTestnet : boolean) {
 
 export const jettonListTestnet = [
     /* That is a hack */
+    
+    {
+      "name": "Router: 🫳🅿👡✳ (Testnet Emergency Deploy 18.11.2024)",
+      "minter": "0QDnfag9lHlc0rS6YeI7WwRq-3ltcKSsYxLiXmveB7gNU9UB"
+    },
     {
       "name": "Router: 🪡↘🤫📀 (Testnet Deploy before first mainnet 11.11.2024)",
       "minter": "EQCf_TONCABqy-1bGwkmDiRRZZ3Qdxov6Tuog5QjE0nV3i5g"
@@ -31,18 +36,9 @@ export const jettonListTestnet = [
       "minter": "EQDA-TONcOp2IIqfpkGnL2fInc-Cm-ZCS5uy_EF_B3etN1Uv"
     },  
     {
-      "name": "Router: 🚉👖◼✂ (for indexer test)",
-      "minter": "EQAN-TONIOdpazUG5aSecU3MA2Ch6qTSvan9qJJ1JVuP1gO1"
-    },  
-    {
-        "name": "Router:💧🎪🦺🚔",
-        "minter": "0QAE_TOnCFUwic-KfCaKf7sN17W9h7_jv-N_lzhJocEs9imB"
-    },
-    {
         "name": "pTon",
         "minter": getPTonMinterAddress(true).toString()
     },
-
     {
       "name": "🌀BLACK_HOLE_ADDRESS",
       "minter": BLACK_HOLE_ADDRESS.toString()
@@ -51,7 +47,10 @@ export const jettonListTestnet = [
       "name": "🌀BLACK_HOLE_ADDRESS1",
       "minter": BLACK_HOLE_ADDRESS1.toString()
     },
-
+    {
+      "name": "☠️⚒️NULL⚒️☠️",
+      "minter": "addr_none()"
+    },    
     {
       "name": "ALG_USD",
       "minter": "EQD8Hzc0JD808OAnCsnCea2_Fq4cNAiAhGo5KaXM-zt8HV5Q"
@@ -175,7 +174,11 @@ export const jettonListTestnet = [
     {
       "name": "Router: 🪡↘🤫📀 (Mainnet Deploy 12.11.2024)",
       "minter": "UQBu-T0NcoSfIveS6nXpsshKxBRTZKB83XW-gIunhQwDnKa0"
-    },    
+    }, 
+    {
+      "name": "REX Multisig",
+      "minter": "EQCREXe_J-1_zQHRQxYKzRu8MUUlBve4k_TFdJVEnhIULVwV"
+    },        
     {
       "name": "🌀BLACK_HOLE_ADDRESS",
       "minter": BLACK_HOLE_ADDRESS.toString()
@@ -192,7 +195,7 @@ export const jettonListTestnet = [
       "minter": "EQDYsv6VQ7M37d7IyyQJrRJCfijjUns6zNVNEy6zzJzFIDs2",
       "name": "BANGKOK",
     },    
-    {
+    /*{
         "minter": "EQAaauE_1aCVWmvrlf2_3pHlwzwi4NNrJcaa0vHuBTd15O8H",
         "name": "BTC-MT",
         "wallet": "EQCikJYq6WiMSqrDjLbxAmyo00FGOBLJgo4wnx2vvI6toKkD"
@@ -206,10 +209,26 @@ export const jettonListTestnet = [
         "minter": "EQBcQLUgInlMvwW8FUVX_Qdb_v4HAuwPMFHHSIJWRM4IVw6f",
         "name": "ETH-MT",
         "wallet": "EQDCfXXFge7wvM_EVq9vSfw4q00atRy19upmHNWXqzBemN-t"
+    },*/
+    {
+      "minter": "EQC98_qAmNEptUtPc7W6xdHh_ZHrBUFpw5Ft_IzNU20QAJav",
+      "name": "tsTON",
+    },
+    {
+      "minter": "EQDNhy-nxYFgUqzfUzImBEP67JqsyMIcyk2S5_RwNNEYku0k",
+      "name": "stTON",
     },
     {
         "minter": "EQAvlWFDxGF2lXm67y4yzC17wYKD9A0guwPkMs1gOsM__NOT",
-        "name": "Notcoin",
+        "name": "NOT",
+    },
+    {
+        "minter": "EQAmQGimKRrSHDLllvdUdeDsX1CszGy_SPgNNN8wE2ihIwnP",
+        "name": "TPET",
+    },
+    {
+        "minter": "EQAQXlWJvGbbFfE8F3oS8s87lIgdovS455IsWFaRdmJetTon",
+        "name": "JETTON",
     },
     {
         "minter": "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",

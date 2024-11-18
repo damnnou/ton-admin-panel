@@ -631,6 +631,8 @@ const validateValue = (fieldName: string, value: string, fieldType: FieldType): 
             return parseBigInt(value);
 
         case 'Address':
+            if (value == "addr_none()")
+                return makeValue({address: null, isBounceable: false, isTestOnly: IS_TESTNET})
             if (!Address.isFriendly(value)) {
                 return makeError('Invalid Address');
             }
