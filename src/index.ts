@@ -731,6 +731,9 @@ const renderNewOrderFields = (orderTypeIndex: number): void => {
 
     let html = '';
 
+    if (orderType.description) {
+        html += orderType.description + "<br/>\n"
+    }
     const jettonList = getJettonList(IS_TESTNET)
 
     for (let fieldId in orderType.fields) {

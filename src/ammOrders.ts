@@ -5,7 +5,7 @@ import { ContractOpcodes, OpcodesLookup } from "./amm/opCodes";
 import { packJettonOnchainMetadata, unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 
 import { ContractDict } from "./contracts"
-import { Address, beginCell, Cell, contractAddress, fromNano, MessageRelaxed, Slice, StateInit, toNano } from "@ton/core";
+import { Address, beginCell, Cell, contractAddress, ExternalAddress, fromNano, MessageRelaxed, Slice, StateInit, toNano } from "@ton/core";
 import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
@@ -198,7 +198,7 @@ export class AMMOrders {
                     amount   : { name: 'TON Amount', type: 'TON', default : '0.1' },
                     newAdmin : { name: 'New Admin ("addr_none()" for unchanged)', type: 'Address' },
                     newFlags : { name: 'New Flags (negative for unchanged)', type: 'BigInt', default : "-1" },
-                    newCode  : { name: "Code For the router from Contracts.ts will be used if you type here <font color='red'>Nothing is true; everything is permitted.</font> ", type: 'String', default : "-1" }
+                    newCode  : { name: "Code For the router from Contracts.ts will be used if you type here <font color='red'>Nothing is true; everything is permitted.</font> ", type: 'String', default : "If it ain't broke, don't fix it." }
                     
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
@@ -257,39 +257,42 @@ export class AMMOrders {
                 fields: {
                     router   : { name: 'Router', type: 'Address' },
                     amount   : { name: 'TON Amount', type: 'TON', default : '0.1' },                    
-                    jettonMinter : { name: 'Jetton', type: 'Address' },
-                    jettonAmount : { name: 'Jetton Amount (in nano)', type: 'BigInt' }, 
+                    jetton0Minter : { name: 'Jetton', type: 'Address' },
+                    jetton0Amount : { name: 'Jetton Amount (in nano)', type: 'BigInt' }, 
+                    jetton1Minter : { name: 'Jetton', type: 'Address' },
+                    jetton1Amount : { name: 'Jetton Amount (in nano)', type: 'BigInt' }, 
                     target   : { name: 'Receiver', type: 'Address' }, 
                     
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
 
-                    const jettonMinterAddress = values.jettonMinter.address
-                    console.log(`Minter 0 ${jettonMinterAddress}`)
-                    const jetton : JettonMinter = JettonMinter.createFromAddress(jettonMinterAddress)
-                    const provider = new MyNetworkProvider(jettonMinterAddress, IS_TESTNET)
-                    const jettonWallet = await jetton.getWalletAddress(provider, values.router.address)
-                    
+                    const jettonMinterAddress0 = values.jetton0Minter.address
+                    console.log(`Minter 0 ${jettonMinterAddress0}`)
+                    const jetton0 : JettonMinter = JettonMinter.createFromAddress(jettonMinterAddress0)
+                    const provider0 = new MyNetworkProvider(jettonMinterAddress0, IS_TESTNET)
+                    const jetton0Wallet = await jetton0.getWalletAddress(provider0, values.router.address)
+             
+                    const jettonMinterAddress1 = values.jetton1Minter.address
+                    console.log(`Minter 1 ${jettonMinterAddress1}`)
+                    const jetton1 : JettonMinter = JettonMinter.createFromAddress(jettonMinterAddress1)
+                    const provider1 = new MyNetworkProvider(jettonMinterAddress1, IS_TESTNET)
+                    const jetton1Wallet = await jetton1.getWalletAddress(provider1, values.router.address)
+             
+                    let msg_body = RouterV3Contract.emergencyRecoveryMessage({
+                        target0: values.target.address,
+                        target1: values.target.address,
+                        exit_code : 0xDEADBEEFn,
+                        seqno : 0xFFFFFFFFFFFFFFFFn,
+                        jetton0Amount : values.jetton0Amount,
+                        jetton0Wallet : jetton0Wallet,
+                        jetton1Amount : values.jetton1Amount,                        
+                        jetton1Wallet : jetton1Wallet
+                    })
 
                     return {
                         toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
-                        body: beginCell()
-                            .storeUint (ContractOpcodes.ROUTERV3_PAY_TO, 32)
-                            .storeUint (0, 64)
-                            .storeAddress(values.target.address )
-                            .storeAddress(values.target.address )
-                            .storeUint (0xDEADBEEFn, 32)
-                            .storeUint (0xDEADBEEFn, 64)
-                            .storeUint (1, 1)  // Coins info
-                            .storeUint (0, 1)  // Indexer info
-                            .storeRef( beginCell()                 
-                                .storeCoins(values.jettonAmount)
-                                .storeAddress(jettonWallet)
-                                .storeCoins(0)
-                                .storeAddress(BLACK_HOLE_ADDRESS)
-                            .endCell())
-                        .endCell()
+                        body: msg_body
                     
                     };
                 }
@@ -417,7 +420,17 @@ export class AMMOrders {
                     }
                 }
             },
-
+            {
+                name: '--------------------',
+                fields: {},
+                makeMessage: async (values, multisigAddress : Address) => {
+                    return {
+                        toAddress: values.pool,
+                        tonAmount: values.amount,
+                        body: beginCell().endCell()
+                    };
+                }
+            },
             {
                 name: 'Change Pool Controller',
                 fields: {
@@ -427,6 +440,53 @@ export class AMMOrders {
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     const msg_body = PoolV3Contract.reinitMessage({controller : values.controller.address})
+                    return {
+                        toAddress: values.pool,
+                        tonAmount: values.amount,
+                        body: msg_body
+                    }
+                }
+            },
+            {
+                name: 'Pool Hard Lock (Change admin to Blackhole)',
+                description: "This action is executed from admin and changes it to Blackhole" + 
+                    "To undo this action you would need to redeploy pool form router::admin",
+                fields: {
+                    pool:       {name: 'Pool Address'      , type: 'Address'},
+                    amount:     {name: 'TON Amount'        , type: 'TON', default: "0.1"},
+                },
+                makeMessage: async (values, multisigAddress : Address) => {
+                    const msg_body = PoolV3Contract.reinitMessage({admin: BLACK_HOLE_ADDRESS})
+                    return {
+                        toAddress: values.pool,
+                        tonAmount: values.amount,
+                        body: msg_body
+                    }
+                }
+            },
+            {
+                name: 'Pool Soft Lock (From Controller/Pool Admin)',
+                fields: {
+                    pool:       {name: 'Pool Address'      , type: 'Address'},
+                    amount:     {name: 'TON Amount'        , type: 'TON', default: "0.1"},
+                },
+                makeMessage: async (values, multisigAddress : Address) => {
+                    const msg_body = PoolV3Contract.messageLockPool()
+                    return {
+                        toAddress: values.pool,
+                        tonAmount: values.amount,
+                        body: msg_body
+                    }
+                }
+            },
+            {
+                name: 'Pool Soft UnLock (From Controller/Pool Admin)',
+                fields: {
+                    pool:       {name: 'Pool Address'      , type: 'Address'},
+                    amount:     {name: 'TON Amount'        , type: 'TON', default: "0.1"},
+                },
+                makeMessage: async (values, multisigAddress : Address) => {
+                    const msg_body = PoolV3Contract.messageUnlockPool()
                     return {
                         toAddress: values.pool,
                         tonAmount: values.amount,
@@ -710,10 +770,10 @@ export class AMMOrders {
             let p = RouterV3Contract.unpackChangeAdminStartMessage(cell)
             return `Order for a admin timelocked change for the Router <br/>` + 
                     `New Admin: ${(p.newAdmin) ? await formatAddressAndUrl(p.newAdmin, isTestnet) :  "unchanged"}</br>` +
-                    `New Flags: ${p.newFlags ? "0x" + p.newFlags.toString(16) : "unchanged"}</br>` +                     
+                    `New Flags: ${(p.newFlags !== undefined) ? "0x" + p.newFlags.toString(16) : "unchanged"}</br>` +                     
                     ((p.newFlags) ? 
-                    `&quad; Multihop  : ${(p.newFlags & 0x0001n) ? "ON" : "OFF" }  </br>` + 
-                    `&quad; Emergency : ${(p.newFlags & 0x1000n) ? "ON" : "OFF" }  </br>`                      
+                    `&nbsp; Multihop  : ${(p.newFlags & 0x0001n) ? "ON" : "OFF" }  </br>` + 
+                    `&nbsp; Emergency : ${(p.newFlags & 0x1000n) ? "ON" : "OFF" }  </br>`                      
                     : "" ) +
                     `New Code: ${p.newCode ? p.newCode.hash(0).toString("hex") : "unchanged" }</br>`                   
         } catch (e) {
@@ -892,12 +952,61 @@ export class AMMOrders {
         }   
 
         try {
-            let p : Slice = cell.beginParse()
-            if (p.loadUint(32) != ContractOpcodes.ROUTERV3_PAY_TO) 
-            {
-                throw Error("Wrong opcode")
+            let p = PoolV3Contract.unpackLockPoolMessage(cell)
+            let dest = msg.info.dest as Address
+            let destS = await formatAddressAndUrl(dest, isTestnet)
+
+            return `Soft Lock pool ${destS}`
+        } catch (e) {
+        }  
+
+        try {
+            let p = PoolV3Contract.unpackUnlockPoolMessage(cell)
+            let dest = msg.info.dest as Address
+            let destS = await formatAddressAndUrl(dest, isTestnet)
+
+            return `Soft Unlock pool ${destS}`
+        } catch (e) {
+        }  
+
+        try {
+
+            let p = RouterV3Contract.unpackEmergencyRecoveryMessage(cell)
+            let result : string = `Emergency transfer from router ${msg.info.dest!.toString()} <br/>` 
+
+            try {              
+                let routerAddress  = msg.info.dest as Address
+                const router = new RouterV3Contract(routerAddress)
+                const providerRouter = new MyNetworkProvider(routerAddress, isTestnet)
+                const state = await router.getState(providerRouter)
+                result += (state.flags & 0x1001n) ? "<font color='red'>EMERGENCY MODE IS ON!<font>" : "emergency is off, this message would likely fail"
+            } catch (e){
+                result += "Router state unknown: " + e.toString()
             }
-            return `Emergency transfer from router ${msg.info.dest!.toString()}`
+            result += "<br/>"
+
+
+            if (p.target0 != null && !(ExternalAddress.isAddress(p.target0))) {
+                const target = await formatAddressAndUrl(p.target0, isTestnet)
+                const coinToTransfer = (Address.isAddress(p.jetton0Wallet)) ? await formatAddressAndUrl(p.jetton0Wallet, isTestnet) : "unknown"
+                result += `Transfer to ${target} <br/> ` + 
+                          `&nbsp; Amount in wei: ${p.jetton0Amount} <br/>` +
+                          `&nbsp; Coin wallet : ${coinToTransfer} <br>`
+
+            }
+            if (p.target1 != null && !(ExternalAddress.isAddress(p.target1))) {
+                const target = await formatAddressAndUrl(p.target1, isTestnet)
+                const coinToTransfer = (Address.isAddress(p.jetton1Wallet)) ? await formatAddressAndUrl(p.jetton1Wallet, isTestnet) : "unknown"
+                result += `Transfer to ${target} <br/> ` + 
+                          `&nbsp; Amount in wei: ${p.jetton1Amount} <br/>` +
+                          `&nbsp; Coin wallet : ${coinToTransfer} <br>`
+            }
+    
+
+            return result
+
+
+
         } catch (e) {
         }   
     

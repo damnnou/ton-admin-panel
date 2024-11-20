@@ -172,6 +172,11 @@ export const jettonListTestnet = [
   export const jettonListMainnet = [ 
     
     {
+      "name": "Router: 💻🖱👿🥣 (Mainnet Deploy 19.11.2024)",
+      "minter": "EQC_-t0nCnOFMdp7E7qPxAOCbCWGFz-e3pwxb6tTvFmshjt5"
+    },
+
+    {
       "name": "Router: 🪡↘🤫📀 (Mainnet Deploy 12.11.2024)",
       "minter": "UQBu-T0NcoSfIveS6nXpsshKxBRTZKB83XW-gIunhQwDnKa0"
     }, 
@@ -241,6 +246,9 @@ export const jettonListTestnet = [
     {
         "minter": "EQAJ8uWd7EBqsmpSWaRdf_I-8R8-XHwh3gsNKhy-UrdrPcUo",
         "name": "HMSTR",
+    },
+    {
+        "minter": "EQBZ_cafPyDr5KUTs0aNxh0ZTDhkpEZONmLJA2SNGlLm4Cko",
+        "name": "REDO",
     }
-
   ]

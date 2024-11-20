@@ -30,6 +30,7 @@ export interface MakeMessageResult {
 
 export interface OrderType {
     name: string;
+    description? : string;
     fields: { [key: string]: OrderField };
     check?: (values: { [key: string]: any }) => Promise<ValidatedValue>;
     makeMessage: (values: { [key: string]: any }, multisigAddress : Address) => Promise<MakeMessageResult | MakeMessageResult []>;

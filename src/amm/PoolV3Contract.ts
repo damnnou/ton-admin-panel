@@ -384,6 +384,8 @@ export class PoolV3Contract implements Contract {
     {
         let s = body.beginParse()
         const op       = s.loadUint(32)
+        if (op != ContractOpcodes.POOLV3_INIT)
+            throw Error("Wrong opcode")
         const query_id = s.loadUint(64)
         const is_from_admin = (s.loadUint(1) != 0)
         const setAdmin = s.loadUint(1)
@@ -499,24 +501,51 @@ export class PoolV3Contract implements Contract {
         await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body })
     }
 
+    /* ==== LOCK ==== */
+    static messageLockPool() : Cell {
+        return beginCell()
+            .storeUint(ContractOpcodes.POOLV3_LOCK, 32) // OP code
+            .storeUint(0, 64) // query_id          
+        .endCell()
+    }
+
+    static unpackLockPoolMessage(body : Cell) {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        if (op != ContractOpcodes.POOLV3_LOCK)
+            throw Error("Wrong opcode")
+
+        const query_id = s.loadUint(64)
+    }
+
     async sendLockPool(provider: ContractProvider, sender: Sender, value: bigint) 
     {
-        const msg_body = beginCell()
-            .storeUint(ContractOpcodes.POOLV3_LOCK, 32) // OP code
-            .storeUint(0, 64)                           // query_id  
+        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: PoolV3Contract.messageLockPool() })
+    }
+
+    /* ==== UNLOCK ==== */
+    static messageUnlockPool() : Cell {
+        return beginCell()
+            .storeUint(ContractOpcodes.POOLV3_UNLOCK, 32) // OP code
+            .storeUint(0, 64) // query_id          
         .endCell()
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body })
+    }
+
+    static unpackUnlockPoolMessage(body : Cell) {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        if (op != ContractOpcodes.POOLV3_UNLOCK)
+            throw Error("Wrong opcode")
+
+        const query_id = s.loadUint(64)
     }
 
     async sendUnlockPool(provider: ContractProvider, sender: Sender, value: bigint) 
     {
-        const msg_body = beginCell()
-            .storeUint(ContractOpcodes.POOLV3_UNLOCK, 32) // OP code
-            .storeUint(0, 64)                             // query_id  
-        .endCell()
-        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body })
+        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: PoolV3Contract.messageUnlockPool() })
     }
 
+    /* ==== PROTOCOL COLLECT ==== */
     static messageCollectProtocol() : Cell {
         return beginCell()
             .storeUint(ContractOpcodes.POOLV3_COLLECT_PROTOCOL, 32) // OP code

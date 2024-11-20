@@ -12,7 +12,8 @@ import {
     TupleItem
 } from "@ton/core";
 import {TonClient} from "@ton/ton";
-
+                
+//const API_KEY = 'f200a6fdba67f4cd27bf0c69c28165305516fd503930a0c82456f9f763eeb773'
 const API_KEY = 'd843619b379084d133f061606beecbf72ae2bf60e0622e808f2a3f631673599b';
 
 export const sendToIndex = async (method: string, params: any, isTestnet: boolean) => {
@@ -36,6 +37,8 @@ export const sendToIndex = async (method: string, params: any, isTestnet: boolea
     return json;
 }
 
+const TON_CONSOLE_KEY=`AGHD4DYGGAWBDZAAAAAPYUMY4V22MOI74LDT4VIF47EBFARRYYABMNGJMDGF6QJI2JATNKA`
+
 export const sendToTonApi = async (method: string, params: any, isTestnet: boolean) => {
     //const mainnetRpc = 'https://dev.tonapi.io/v2/';
     const mainnetRpc = 'https://tonapi.io/v2/';
@@ -45,7 +48,8 @@ export const sendToTonApi = async (method: string, params: any, isTestnet: boole
 
     const headers = {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer AHIQH4F4Y4XR6UIAAAAOGYUHWOWLUS6ZIPEXSCLAPOMMD6FSNMPUKHCIJHIP52YTU4VKURA'
+        'Authorization': `Bearer AHIQH4F4Y4XR6UIAAAAOGYUHWOWLUS6ZIPEXSCLAPOMMD6FSNMPUKHCIJHIP52YTU4VKURA`
+        //'Authorization': `Bearer AGHD4DYGGAWBDZAAAAAPYUMY4V22MOI74LDT4VIF47EBFARRYYABMNGJMDGF6QJI2JATNKA`
     };
 
     const response = await fetch(rpc + method + '?' + new URLSearchParams(params), {

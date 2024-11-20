@@ -3,6 +3,7 @@ import { ContractErrors, ContractOpcodes, OpcodesLookup } from "./opCodes";
 import { ContractMessageMeta, DummyCell } from "./DummyCell";
 import { BLACK_HOLE_ADDRESS, nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract";
 import { FEE_DENOMINATOR, IMPOSSIBLE_FEE } from "./frontmath/frontMath";
+import { MetaMessage, StructureVisitor } from "./structureVisitor";
 
 /** Initial data structures and settings **/
 export const TIMELOCK_DELAY_DEFAULT : bigint = 5n * 60n;
@@ -345,8 +346,6 @@ export class RouterV3Contract implements Contract {
         return beginCell()
             .storeUint(ContractOpcodes.ROUTERV3_CHANGE_PARAMS, 32) // OP code
             .storeUint(0, 64) // QueryID what for?           
-//            .storeUint(opts.newFlags ? 1 : 0, 1)
-//            .storeUint(opts.newFlags ?? 0, 64)
             .storeUint(opts.newPoolFactory ? 1 : 0, 1)
             .storeAddress(opts.newPoolFactory ?? BLACK_HOLE_ADDRESS)
             .storeUint(opts.newPoolAdmin ? 1 : 0, 1)
@@ -357,7 +356,6 @@ export class RouterV3Contract implements Contract {
     static unpackChangeRouterParamMessage( body :Cell) : {
         newPoolAdmin? : Address        
         newPoolFactory? : Address
-//        newFlags? : bigint
     }
     {
         let s = body.beginParse()
@@ -366,10 +364,6 @@ export class RouterV3Contract implements Contract {
             throw Error("Wrong opcode")
 
         const query_id = s.loadUint(64)
-//        const hasNewFlags = s.loadBit()                
-//       const newFlagsV = s.loadUintBig(64)
-//        const newFlags = hasNewFlags ? newFlagsV : undefined
-
         const hasPoolFactory = s.loadBit()      
         const newPoolFactoryV = s.loadAddress()
         const newPoolFactory = hasPoolFactory ? newPoolFactoryV : undefined
@@ -388,6 +382,77 @@ export class RouterV3Contract implements Contract {
         }
     ) {
         const msg_body = RouterV3Contract.changeRouterParamMessage(opts)
+        return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
+    }
+
+    /* =============  EMERGENCY RECOVERY =============  */
+    static emergencyRecoveryMessage(opts : {
+        target0 : Address,
+        target1 : Address,
+        exit_code? : bigint
+        seqno? : bigint,                
+        jetton0Wallet? : Address, 
+        jetton0Amount? : bigint,
+        jetton1Wallet? : Address, 
+        jetton1Amount? : bigint,        
+    } ) : Cell {
+        return beginCell()
+            .storeUint(ContractOpcodes.ROUTERV3_PAY_TO, 32) // OP code
+            .storeUint(0, 64) // QueryID what for?           
+            .storeAddress(opts.target0)
+            .storeAddress(opts.target1)                
+            .storeUint (opts.exit_code ?? 0, 32)
+            .storeUint (opts.seqno ?? 0, 64)
+            .storeUint(1, 1) // Coins info
+            .storeUint(0, 1) // Indexer info
+            .storeRef(beginCell()    // 124 + 267 + 124 + 267 = 782
+                .storeCoins  (opts.jetton0Amount ?? 0)
+                .storeAddress(opts.jetton0Wallet ?? null)
+                .storeCoins  (opts.jetton1Amount ?? 0)
+                .storeAddress(opts.jetton1Wallet ?? null)
+            .endCell())
+        .endCell();
+    } 
+
+    static unpackEmergencyRecoveryMessage(body :Cell)  
+    {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        if (op != ContractOpcodes.ROUTERV3_PAY_TO)
+            throw Error("Wrong opcode")
+        const query_id = s.loadUint(64)
+        let target0 = s.loadAddressAny();
+        let target1 = s.loadAddressAny();
+
+        let exit_code  = s.loadUint(32);
+        let seqno = s.loadUintBig(64);
+        let has_coins  = s.loadUint(1);
+        
+        let coinsSlice     = s.loadRef().beginParse();
+
+        let jetton0Amount = coinsSlice.loadCoins();
+        let jetton0Wallet = coinsSlice.loadAddressAny();
+        let jetton1Amount = coinsSlice.loadCoins();
+        let jetton1Wallet = coinsSlice.loadAddressAny();
+
+        return {
+            target0, target1, exit_code, seqno, jetton0Amount, jetton0Wallet, jetton1Amount, jetton1Wallet
+        }
+    }
+
+    async sendEmergencyRecoveryMessage(provider: ContractProvider, sender: Sender, value: bigint, 
+        opts : {
+            target0 : Address,
+            target1 : Address,
+            exit_code? : bigint
+            seqno? : bigint,                
+            jetton0Wallet? : Address, 
+            jetton0Amount? : bigint,
+            jetton1Wallet? : Address, 
+            jetton1Amount? : bigint,        
+        }
+    ) {
+        const msg_body = RouterV3Contract.emergencyRecoveryMessage(opts)
         return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
     }
 
@@ -449,6 +514,162 @@ export class RouterV3Contract implements Contract {
       ]);
       return stack.readCell();
     }
+
+
+    static metaDescription1 : MetaMessage[] =     
+    [
+    {
+        opcode : ContractOpcodes.JETTON_TRANSFER_NOTIFICATION,
+        description : "Process router funding, payload determines if it is mint or swap",
+
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,            type:`Uint`,    size:32,   meta:"op", comment: ""})    
+            visitor.visitField({ name:`query_id`,      type:`Uint`,    size:64,   meta:"",   comment: "queryid as of the TON documentation"}) 
+            visitor.visitField({ name:`jetton_amount`, type:`Coins`,   size:124,  meta:"",   comment: "Amount of coins sent to the router"}) 
+            visitor.visitField({ name:`from_user`,     type:`Address`, size:267 , meta:"",   comment: "User that originated the transfer"})
+            visitor.visitField({ name:`forward_payload`, type:`Cell`,  size:0, meta:"Either, Payload",comment: "Payload for processing"}) 
+        }
+    },
+    {
+        opcode : ContractOpcodes.ROUTERV3_CREATE_POOL,
+        description : "Operation that deploys and inits new [Pool](pool.md) contract for two given jettons identified by their wallets. New pool would reorder the jettons to match the " + 
+              "invariant `slice_hash(jetton0_address) > slice_hash(jetton1_address).`",
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,               type:`Uint`,    size:32,  meta:"op", comment: ""})    
+            visitor.visitField({ name:`query_id`,         type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"}) 
+            visitor.visitField({ name:`jetton_wallet0`,   type:`Address`, size:267, meta:"",   comment: "Address of the jetton0 wallet. Used to compute pool address"})
+            visitor.visitField({ name:`jetton_wallet1`,   type:`Address`, size:267, meta:"",   comment: "Address of the jetton1 wallet. Used to compute pool address"})
+            visitor.visitField({ name:`tick_spacing`,     type:`Int`,     size:24,  meta : "", comment : "Tick spacing to be used in the pool"})
+            visitor.visitField({ name:`initial_priceX96`, type:`Uint`,    size:160, meta:"PriceX96", comment: "Initial price for the pool"}) 
+
+            visitor.visitField({ name:`protocol_fee`,     type:`Uint`, size:16, meta:"Fee" , comment: `Liquidity provider fee. base in FEE_DENOMINATOR parts. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
+            visitor.visitField({ name:`lp_fee_base`,      type:`Uint`, size:16, meta:"Fee" , comment: `Protocol fee in FEE_DENOMINATOR. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
+            visitor.visitField({ name:`lp_fee_current`,   type:`Uint`, size:16, meta:"Fee" , comment: `Current value of the pool fee, in case of dynamic adjustment. If value is more than ${FEE_DENOMINATOR} value would be default`})
+
+            visitor.visitField({ name:`nftv3_content`    , type:`Cell`, meta: `Metadata`, size:0, comment: "Metadata for the NFT Collection" })
+            visitor.visitField({ name:`nftv3item_content`, type:`Cell`, meta: `Metadata`, size:0, comment: "Metadata for the NFT Item" })
+
+            visitor.enterCell( { name: "minter_cell",   type:"", comment : "Cell With Minters"})
+            visitor.visitField({ name:`jetton0_minter`, type:`Address`, size:267, meta:"", comment: "Address of the jetton0 minter, used by indexer and frontend"})
+            visitor.visitField({ name:`jetton1_minter`, type:`Address`, size:267, meta:"", comment: "Address of the jetton1 minter, used by indexer and frontend"})
+            visitor.visitField({ name:`controller_addr`,type:`Address`, size:267, meta:"", comment: "Address that is allowed to change the fee. Can always be updated by admin. If has_controller is false could be 00b"})
+
+            visitor.leaveCell({})
+        }
+    },
+    {
+        opcode : ContractOpcodes.POOLV3_FUND_ACCOUNT,
+        description : "This is not a message Op this is a payload format for JETTON_TRANSFER_NOTIFICATION",
+
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,               type:`Uint`,    size:32,  meta:"op", comment: ""})    
+            visitor.visitField({ name:`jetton_target_w`,  type:`Address`, size:267, meta:"",   comment: "Address of the jetton0 wallet. Used to compute pool address"})
+            //visitor.visitField({ name:`query_id`,         type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"}) 
+
+            visitor.visitField({ name:`enough0`   , type:`Coins`,   size:124, meta:"",   comment : ""}) 
+            visitor.visitField({ name:`enough1`   , type:`Coins`,   size:124, meta:"",   comment : ""}) 
+            visitor.visitField({ name:`liquidity` , type:`Uint`,    size:128, meta:"",   comment : "Amount of liquidity to mint"})
+            visitor.visitField({ name:`tickLower` , type:`Int`,     size:24,  meta:"",   comment : "lower bound of the range in which to mint"}) 
+            visitor.visitField({ name:`tickUpper` , type:`Int`,     size:24,  meta:"",   comment : "upper bound of the range in which to mint"})  
+        }
+    },
+    {
+        opcode : ContractOpcodes.POOLV3_SWAP,
+        description : "This is not a message Op this is a payload format for JETTON_TRANSFER_NOTIFICATION" + 
+        "",
+
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,                  type:`Uint`,    size:32,  meta:"op",  comment: ""})   
+            visitor.visitField({ name:`sqrtPriceLimitX96`,   type:`Uint`,    size:160, meta:"PriceX96", comment: "Limit price. Swap won't go beyond it"}) 
+            visitor.visitField({ name:`minOutAmount`,        type:`Coins`,   size:124, meta:"",    comment : ""}) 
+            visitor.visitField({ name:`owner_address`,       type:`Address`, size:267, meta:"",    comment: "Address of the sender"})
+           
+            visitor.enterCell( { name:"multihop_cell",       type:`Maybe`, comment : "Cell with multihop data"})
+            visitor.visitField({ name:`target_address`,      type:`Address`, size:267, meta:"",    comment: "Address of the reciever"})
+            visitor.visitField({ name:`ok_forward_amount`,   type:`Coins`,   size:124, meta:"",    comment : ""}) 
+            visitor.visitField({ name:`ok_forward_payload`,  type:`Cell`,  size:0, meta:"Payload", comment: "Payload for processing by target with swapped coins"}) 
+            visitor.visitField({ name:`ret_forward_amount`,  type:`Coins`,   size:124, meta:"",    comment : ""}) 
+            visitor.visitField({ name:`ret_forward_payload`, type:`Cell`,  size:0, meta:"Payload", comment: "Payload for processing by owner with change/return coins"}) 
+            visitor.leaveCell({})
+        }
+    },   
+    {
+        opcode : ContractOpcodes.ROUTERV3_PAY_TO,
+        description : "This is not a message Op this is a payload format for JETTON_TRANSFER_NOTIFICATION",  
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,       type:`Uint`,    size:32,  meta:"op", comment: ""})    
+            visitor.visitField({ name:`query_id`, type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"}) 
+            visitor.visitField({ name:`owner0`,   type:`Address`, size:267, meta:"",   comment: "Address of the sender"})
+            visitor.visitField({ name:`owner1`,   type:`Address`, size:267, meta:"",   comment: "Address of the sender"})
+
+            visitor.visitField({ name:`exit_code`,type:`Uint`,    size:32,  meta:"",   comment: "queryid as of the TON documentation"}) 
+            visitor.visitField({ name:`seqno`   , type:`Uint`,    size:64,  meta:"Indexer",   comment: "queryid as of the TON documentation"}) 
+            visitor.enterCell( { name:"coinsinfo_cell",  type:`Maybe`, comment : "Cell with info about the coins"})
+            visitor.visitField({ name:`amount0`,         type:`Coins`,   size:124,     meta:"",        comment : ""}) 
+            visitor.visitField({ name:`jetton0_address`, type:`Address`, size:267,  meta:"Payload", comment: "Payload for processing by target with swapped coins"}) 
+            visitor.visitField({ name:`amount1`,         type:`Coins`, size:124,     meta:"",        comment : ""}) 
+            visitor.visitField({ name:`jetton1_address`, type:`Address`,  size:267,  meta:"Payload", comment: "Payload for processing by owner with change/return coins"}) 
+            visitor.leaveCell({})
+
+            visitor.visitField({ name:`indexerinfo_cell`, type:`Cell`, meta: `Metadata`, size:0, comment: "Metadata for the NFT Collection" })
+            //visitor.enterCell( { name:"indexerinfo_cell",  type:`Maybe`, comment : "Cell with indexer"})
+            //visitor.leaveCell({})
+            /*
+             if (hasIndexerInfo) {
+                let p1 = p.loadRef().beginParse()
+                if (exit_code == RouterV3Contract.RESULT_SWAP_OK) {
+                    result.push({ name:`liquidity` ,           value: `${p1.loadUint(128)}`   , type:`Uint(128),Indexer`})   
+                    result.push({ name:`price_sqrt`,           value: `${p1.loadUintBig(160)}`, type:`Uint(160),Indexer,PriceX96`}) 
+                    result.push({ name:`tick`,                 value: `${p1.loadInt(24)  }`   , type:`Int(24),Indexer`})
+                    result.push({ name:`feeGrowthGlobal0X128`, value: `${p1.loadInt(24)  }`   , type:`Int(256),Indexer`})
+                    result.push({ name:`feeGrowthGlobal1X128`, value: `${p1.loadInt(24)  }`   , type:`Int(256),Indexer`})   
+                }
+
+                if (exit_code == RouterV3Contract.RESULT_BURN_OK) {
+                    result.push({ name:`nftIndex`,        value: `${p1.loadUint(64) }`, type:`Uint(64),Indexer`})      
+                    result.push({ name:`liquidityBurned`, value: `${p1.loadUint(128)}`, type:`Uint(128),Indexer`})                 
+                    result.push({ name:`tickLower`,       value: `${p1.loadInt(24)  }`, type:`Int(24),Indexer`})
+                    result.push({ name:`tickUpper`,       value: `${p1.loadInt(24)  }`, type:`Int(24),Indexer`})
+                    result.push({ name:`tick`,            value: `${p1.loadInt(24)  }`, type:`Int(24),Indexer`})                
+                }
+            */
+        }
+    },
+    {
+        opcode : ContractOpcodes.ROUTERV3_RESET_GAS,
+        description : "",
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,               type:`Uint`,    size:32,  meta:"op", comment: ""})    
+            visitor.visitField({ name:`query_id`,         type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"})     
+        }
+    },
+    {
+        opcode : ContractOpcodes.ROUTERV3_CHANGE_ADMIN_START,
+        description : "",
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,         type:`Uint`,    size:32,  meta:"op", comment: ""})    
+            visitor.visitField({ name:`query_id`,   type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"})     
+            visitor.visitField({ name:`new_admin`,  type:`Address`, size:267 , meta : ""  , comment : "NFT owner "})
+        }
+    },
+    {
+        opcode : ContractOpcodes.ROUTERV3_CHANGE_ADMIN_COMMIT,
+        description : "",
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,               type:`Uint`,    size:32,  meta:"op", comment: ""})    
+            visitor.visitField({ name:`query_id`,         type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"})     
+        }
+    },
+    {
+        opcode : ContractOpcodes.JETTON_EXCESSES,
+        description : "",
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,               type:`Uint`,    size:32,  meta:"op", comment: ""})    
+            visitor.visitField({ name:`query_id`,         type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"})     
+        }
+    },
+
+    ]
 
 
     public static RESULT_SWAP_OK = ContractErrors.POOLV3_RESULT_SWAP_OK;
@@ -578,20 +799,24 @@ export class RouterV3Contract implements Contract {
             result.push({ name:`op`,               value: `${p.loadUint(32)  }`  , type:`Uint(32) op`})
         }
 
-
         if (op == ContractOpcodes.POOLV3_SWAP)
         {      
             result.push({ name:`op`,                value: `${p.loadUint(32)  }`  , type:`Uint(32) op`, comment: "Computes the swap math, and issues a command to the router to send funds. Only would be accepted from the router"})  
             result.push({ name:`sender`,            value: `${p.loadAddress() }`  , type:`Address()`})  
             result.push({ name:`sqrtPriceLimitX96`, value: `${p.loadUintBig(160)}`, type:`Uint(160),PriceX96`}) 
             result.push({ name:`minOutAmount`     , value: `${p.loadCoins()  }`   , type:`Coins()  `})
-            result.push({ name:`to_address`,        value: `${p.loadAddress() }`  , type:`Address()`})
-            result.push({ name:`forward_amount`   , value: `${p.loadCoins()  }`   , type:`Coins()  `, comment : "Amount of ton that would be attached to forward payload"}) 
-            let forwardPayload = p.loadMaybeRef()
-            if (forwardPayload) {
-                result.push({ name:`forward_payload`   , value: forwardPayload.toBoc().toString('hex') , type:`Cell(), Payload` })
+            result.push({ name:`owner_address`    , value: `${p.loadAddress() }`  , type:`Address()`})
+            let multihop_cell = p.loadMaybeRef()
+            if (multihop_cell) {
+                let multihopSlice = multihop_cell.beginParse()
+                //result.push({ name:`multihop_cell`   , value: multihop_cell.toBoc().toString('hex') , type:`Cell(), Payload` })
+                result.push({ name:`target_address`,      value: `${multihopSlice.loadAddress()}` , type:`Address()`, comment: ``})
+                result.push({ name:`ok_forward_amount`,   value: `${multihopSlice.loadCoins()}`   , type:`Coins()`  , comment: ``}) 
+                result.push({ name:`ok_forward_payload`,  value: `${multihopSlice.loadRef()}`     , type:`Cell()`   , comment: ``})
+                result.push({ name:`ret_forward_amount`,  value: `${multihopSlice.loadCoins()}`   , type:`Coins()`  , comment: ``})
+                result.push({ name:`ret_forward_payload`, value: `${multihopSlice.loadRef()}`     , type:`Cell()`   , comment: ``})
             } else {
-                result.push({ name:`forward_payload`   , value: `none` , type:`Cell()` })
+                result.push({ name:`multihop_cell`   , value: `none` , type:`Cell()` })
             }       
         }      
 
