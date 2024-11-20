@@ -449,8 +449,10 @@ export class AMMOrders {
             },
             {
                 name: 'Pool Hard Lock (Change admin to Blackhole)',
-                description: "This action is executed from admin and changes it to Blackhole" + 
-                    "To undo this action you would need to redeploy pool form router::admin",
+                description: "<font color='red'>" +
+                    "This action is executed from admin and changes it to Blackhole <br/>\n" + 
+                    "To undo this action you would need to redeploy pool form router::admin"+
+                    "</font>",
                 fields: {
                     pool:       {name: 'Pool Address'      , type: 'Address'},
                     amount:     {name: 'TON Amount'        , type: 'TON', default: "0.1"},
@@ -913,8 +915,8 @@ export class AMMOrders {
             `  <li>Pool Active/Locked : ${p.activate_pool == undefined ? "unchanged" : p.activate_pool } </li> ` +
             `  <li>Pool Tick Spacing  : ${p.tickSpacing == undefined ? "unchanged" : p.tickSpacing } </li> ` +
             `  <li>Pool Price  : ${p.sqrtPriceX96 == undefined ? "unchanged" : ("" + p.sqrtPriceX96.toString() + "  (" + priceInfo + ")" )} </li> ` +
-            `  <li>Pool Controller  : ${p.controller == undefined ? "unchanged" : p.controller } </li> ` +
-            `  <li>Pool Admin  : ${p.admin == undefined ? "unchanged" : p.controller } </li> ` +
+            `  <li>Pool Controller : ${p.controller == undefined ? "unchanged" : p.controller } </li> ` +
+            `  <li>Pool Admin      : ${p.admin      == undefined ? "unchanged" : p.admin      } </li> ` +
             `  <li>Pool Collection Metadata : ${p.nftContentPacked == undefined ? "unchanged" : "CHANGED:" +  (this.renderNFTContent(unpackedCollection))} </li> ` +
             `  <li>NFT Item Metadata : ${p.nftItemContentPacked == undefined ? "unchanged" : "CHANGED:" + unpackedItem.toString() } </li> ` +            
             `</ol>` 
