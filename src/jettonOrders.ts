@@ -22,18 +22,9 @@ export class JettonOrders {
             {
                 name: 'Transfer TON',
                 fields: {
-                    amount: {
-                        name: 'TON Amount',
-                        type: 'TON'
-                    },
-                    toAddress: {
-                        name: 'Destination Address',
-                        type: 'Address'
-                    },
-                    comment: {
-                        name: 'Comment',
-                        type: 'String'
-                    }
+                    amount:    { name: 'TON Amount', type: 'TON'},
+                    toAddress: { name: 'Destination Address',type: 'Address'},
+                    comment:   { name: 'Comment', type: 'String' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     return {
@@ -47,18 +38,9 @@ export class JettonOrders {
             {
                 name: 'Transfer Jetton',
                 fields: {
-                    jettonMinterAddress: {
-                        name: 'Jetton Minter Address',
-                        type: 'Address'
-                    },
-                    amount: {
-                        name: 'Jetton Amount (in units)',
-                        type: 'Jetton'
-                    },
-                    toAddress: {
-                        name: 'To Address',
-                        type: 'Address'
-                    }
+                    jettonMinterAddress: { name: 'Jetton Minter Address', type: 'Address'},
+                    amount: { name: 'Jetton Amount (in units)',type: 'Jetton' },
+                    toAddress: { name: 'To Address', type: 'Address' }
                 },
                 makeMessage: async (values, multisigAddress : Address): Promise<MakeMessageResult> => {
                     const jettonMinterAddress: Address = values.jettonMinterAddress.address;

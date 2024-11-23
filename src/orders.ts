@@ -40,11 +40,11 @@ export interface OrderType {
 export async function parseActionBody (msg: MessageRelaxed, isTestnet : boolean): Promise<string> 
 {
     try {
-        return AMMOrders.parseActionBody(msg, isTestnet)
+        return await AMMOrders.parseActionBody(msg, isTestnet)
     } catch {}
 
     try {    
-        return JettonOrders.parseActionBody(msg, isTestnet)
+        return await JettonOrders.parseActionBody(msg, isTestnet)
     } catch {}
     throw new Error('Unsupported action')
 }

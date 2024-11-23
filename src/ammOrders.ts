@@ -949,7 +949,18 @@ export class AMMOrders {
             let dest = msg.info.dest as Address
             let destS = await formatAddressAndUrl(dest, isTestnet)
 
-            return `Collect protocol fees for ${destS}`
+            let result = `Collect protocol fees for ${destS} <br/>`
+            try {              
+                let poolAddress  = msg.info.dest as Address
+                const poolContract = new PoolV3Contract(poolAddress)
+                const providerPool = new MyNetworkProvider(poolAddress, isTestnet)
+                const state = await poolContract.getPoolStateAndConfiguration(providerPool)
+                result += `Protocol fee to be collected ${state.collectedProtocolFee0} jetton0 and ${state.collectedProtocolFee1} jetton1`
+            } catch (e){
+                result += "Pool state unknown: " + e.toString()
+            }
+
+            return result
         } catch (e) {
         }   
 

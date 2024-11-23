@@ -37,18 +37,19 @@ export const sendToIndex = async (method: string, params: any, isTestnet: boolea
     return json;
 }
 
-const TON_CONSOLE_KEY=`AGHD4DYGGAWBDZAAAAAPYUMY4V22MOI74LDT4VIF47EBFARRYYABMNGJMDGF6QJI2JATNKA`
+const TONCO_TON_CONSOLE_KEY=`AGHD4DYGGAWBDZAAAAAPYUMY4V22MOI74LDT4VIF47EBFARRYYABMNGJMDGF6QJI2JATNKA`
+const DEFAULT_TON_CONSOLE_KEY=`AHIQH4F4Y4XR6UIAAAAOGYUHWOWLUS6ZIPEXSCLAPOMMD6FSNMPUKHCIJHIP52YTU4VKURA`
+
 
 export const sendToTonApi = async (method: string, params: any, isTestnet: boolean) => {
-    //const mainnetRpc = 'https://dev.tonapi.io/v2/';
-    const mainnetRpc = 'https://tonapi.io/v2/';
 
+    const mainnetRpc = 'https://tonapi.io/v2/';
     const testnetRpc = 'https://testnet.tonapi.io/v2/';
     const rpc = isTestnet ? testnetRpc : mainnetRpc;
 
     const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer AHIQH4F4Y4XR6UIAAAAOGYUHWOWLUS6ZIPEXSCLAPOMMD6FSNMPUKHCIJHIP52YTU4VKURA`
+        'Authorization': `Bearer ${DEFAULT_TON_CONSOLE_KEY}`
         //'Authorization': `Bearer AGHD4DYGGAWBDZAAAAAPYUMY4V22MOI74LDT4VIF47EBFARRYYABMNGJMDGF6QJI2JATNKA`
     };
 
