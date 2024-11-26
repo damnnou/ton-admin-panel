@@ -8,6 +8,8 @@ import { checkJettonMinterAdmin, checkJettonMinterNextAdmin } from "./index"
 
 import { DEFAULT_AMOUNT, DEFAULT_INTERNAL_AMOUNT, MakeMessageResult } from "./orders"
 import { assert, formatAddressAndUrl, sanitizeHTML } from "./utils/utils";
+import { getJettonMetadata } from "./jettonCache";
+import BigNumber from "bignumber.js";
 
 
 
@@ -317,8 +319,24 @@ export class JettonOrders {
             const parsed = JettonMinter.parseTransfer(slice);
             if (parsed.customPayload) throw new Error('Transfer custom payload not supported');
             assert(parsed.forwardPayload.remainingBits === 0 && parsed.forwardPayload.remainingRefs === 0, 'Transfer forward payload not supported');
-            const toAddress = await formatAddressAndUrl(parsed.toAddress, isTestnet)
-            return `Transfer ${parsed.jettonAmount} jettons (in units) from multisig to user ${toAddress};`;
+
+            /* */
+            const walletAddress = msg.info.dest! as Address
+            const jettonWallet : JettonWallet = JettonWallet.createFromAddress(walletAddress)
+            const provider = new MyNetworkProvider(walletAddress, isTestnet)
+            const jettonWalletData = await jettonWallet.getWalletData(provider)
+            const minterAddress = jettonWalletData.minter
+            const metadata = await getJettonMetadata(minterAddress, isTestnet)
+
+            
+            const minterAddressS = await formatAddressAndUrl(parsed.toAddress, isTestnet)
+            const toAddressS = await formatAddressAndUrl(parsed.toAddress, isTestnet)
+
+            let jettonPrintable = BigNumber(parsed.jettonAmount.toString()).div(BigNumber(10).pow(BigNumber(metadata.decimals))).toFixed(9)
+
+            return `Transfer <b>${jettonPrintable}</b> &nbsp; <span><img src="${metadata['image']}" width='24px' height='24px' > ${metadata["symbol"]} - ${metadata["name"]} [d:${metadata["decimals"]}]</span> <br/>\n `+
+            `  <b>Minter1:</b> ${minterAddressS}<br/>\n` + 
+            `  <b>To:</b> ${toAddressS}`;
         } catch (e) {
         }
 

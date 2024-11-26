@@ -22,6 +22,8 @@ import { setDeployedJson } from "./index"
 import { getJettonList, getPTonMinterAddress } from "./deployed";
 
 import { getEmojiHash } from "./utils/visualHash"
+import { JettonWallet } from "./jetton/JettonWallet";
+import BigNumber from "bignumber.js";
 
 
 function xorBuffers(buffers: Buffer[]): Buffer {
@@ -955,9 +957,22 @@ export class AMMOrders {
                 const poolContract = new PoolV3Contract(poolAddress)
                 const providerPool = new MyNetworkProvider(poolAddress, isTestnet)
                 const state = await poolContract.getPoolStateAndConfiguration(providerPool)
-                result += `Protocol fee to be collected ${state.collectedProtocolFee0} jetton0 and ${state.collectedProtocolFee1} jetton1`
+                
+                const metadata0 = await getJettonMetadata(state.jetton0_minter, isTestnet)
+                const metadata1 = await getJettonMetadata(state.jetton1_minter, isTestnet)    
+                
+                const minter0AddressS = await formatAddressAndUrl(state.jetton0_minter, isTestnet)
+                const minter1AddressS = await formatAddressAndUrl(state.jetton1_minter, isTestnet)
+
+                
+                let jettonPrintable0 = BigNumber(state.collectedProtocolFee0.toString()).div(BigNumber(10).pow(BigNumber(metadata0.decimals))).toFixed(9)
+                let jettonPrintable1 = BigNumber(state.collectedProtocolFee1.toString()).div(BigNumber(10).pow(BigNumber(metadata1.decimals))).toFixed(9)
+
+                result += `(Current state, not at the execution moment) - Protocol fee to be collected <br/>\n` + 
+                    `&nbsp; - ${jettonPrintable0} &nbsp; <span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]} [d:${metadata0["decimals"]}]</span> <br/>\n` +
+                    `&nbsp; - ${jettonPrintable1} &nbsp; <span><img src="${metadata1['image']}" width='24px' height='24px' > ${metadata1["symbol"]} - ${metadata1["name"]} [d:${metadata1["decimals"]}]</span> <br/>`
             } catch (e){
-                result += "Pool state unknown: " + e.toString()
+                result += "Pool state unknown (refresh page): " + e.toString()
             }
 
             return result
