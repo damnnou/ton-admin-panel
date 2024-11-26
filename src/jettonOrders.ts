@@ -322,21 +322,23 @@ export class JettonOrders {
 
             /* */
             const walletAddress = msg.info.dest! as Address
-            const jettonWallet : JettonWallet = JettonWallet.createFromAddress(walletAddress)
-            const provider = new MyNetworkProvider(walletAddress, isTestnet)
+            const jettonWallet : JettonWallet = JettonWallet.createFromAddress(walletAddress)        
+            const provider = new MyNetworkProvider(walletAddress, isTestnet)            
             const jettonWalletData = await jettonWallet.getWalletData(provider)
             const minterAddress = jettonWalletData.minter
             const metadata = await getJettonMetadata(minterAddress, isTestnet)
 
-            
+            const availableAmountPrintable =  BigNumber(jettonWalletData.balance.toString()).div(BigNumber(10).pow(BigNumber(metadata.decimals))).toFixed(9)            
             const minterAddressS = await formatAddressAndUrl(parsed.toAddress, isTestnet)
             const toAddressS = await formatAddressAndUrl(parsed.toAddress, isTestnet)
 
-            let jettonPrintable = BigNumber(parsed.jettonAmount.toString()).div(BigNumber(10).pow(BigNumber(metadata.decimals))).toFixed(9)
+            let transferAmountPrintable = BigNumber(parsed.jettonAmount.toString()).div(BigNumber(10).pow(BigNumber(metadata.decimals))).toFixed(9)
 
-            return `Transfer <b>${jettonPrintable}</b> &nbsp; <span><img src="${metadata['image']}" width='24px' height='24px' > ${metadata["symbol"]} - ${metadata["name"]} [d:${metadata["decimals"]}]</span> <br/>\n `+
+            return `Transfer <b>${transferAmountPrintable}</b> &nbsp; <span><img src="${metadata['image']}" width='24px' height='24px' > ${metadata["symbol"]} - ${metadata["name"]} [d:${metadata["decimals"]}]</span> <br/>\n `+
             `  <b>Minter1:</b> ${minterAddressS}<br/>\n` + 
-            `  <b>To:</b> ${toAddressS}`;
+            `  <b>To:</b> ${toAddressS} <br/>\n` + 
+            `  <b>FYI Current balance</b> (not at executions moment): ${availableAmountPrintable}`;
+
         } catch (e) {
         }
 
