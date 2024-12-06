@@ -1,7 +1,7 @@
 import { OrderType } from "./orders"
 
 import { RouterV3Contract, routerv3ContractCellToConfig, RouterV3ContractConfig, routerv3ContractConfigToCell} from "./amm/RouterV3Contract";
-import { ContractOpcodes, OpcodesLookup } from "./amm/opCodes";
+import { ContractOpcodes } from "./amm/opCodes";
 import { packJettonOnchainMetadata, unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 
 import { ContractDict } from "./contracts"
@@ -14,7 +14,8 @@ import { BLACK_HOLE_ADDRESS, nftContentToPack, PoolV3Contract, poolv3StateInitCo
 import { PoolFactoryContract, PoolFactoryContractConfig, poolFactoryContractConfigToCell } from "./amm/PoolFactoryContract"
 
 import { getJettonMetadata } from "./jettonCache"
-import { formatAddressAndUrl } from "./utils/utils";
+import { formatAddressAndUrl } from "./utils/utils"
+import { poolSnippet } from "./snippets/poolSnippets"
 
 import { PTonMinterV2 } from "./amm/common/PTonMinterV2" 
 
@@ -538,10 +539,10 @@ export class AMMOrders {
             {
                 name: 'Change Pool Fee',
                 fields: {
-                    pool:        { name: 'Pool Address', type: 'Address' },
-                    activeFee:   { name: 'Active Fee'  , type: 'BigInt' },
-                    protocolFee: { name: 'Protocol Fee', type: 'BigInt' },
-                    amount:      { name: 'TON Amount'  , type: 'TON' },
+                    pool:        { name: 'Pool Address', type: 'Address', default : "30"},
+                    activeFee:   { name: 'Active Fee'  , type: 'BigInt' , default : "30"},
+                    protocolFee: { name: 'Protocol Fee', type: 'BigInt' , default : "1000" },
+                    amount:      { name: 'TON Amount'  , type: 'TON' , default : "0.03"},
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     return {
@@ -912,7 +913,10 @@ export class AMMOrders {
             }
 
 
-            return `Change pool parameters:<br/>` +
+            let result = `Change pool parameters:<br/>` 
+            result += await poolSnippet(msg.info.dest! as Address, isTestnet)
+
+            result += `</br>`+ 
             `<ol>` +
             `  <li>Pool Active/Locked : ${p.activate_pool == undefined ? "unchanged" : p.activate_pool } </li> ` +
             `  <li>Pool Tick Spacing  : ${p.tickSpacing == undefined ? "unchanged" : p.tickSpacing } </li> ` +
@@ -922,6 +926,7 @@ export class AMMOrders {
             `  <li>Pool Collection Metadata : ${p.nftContentPacked == undefined ? "unchanged" : "CHANGED:" +  (this.renderNFTContent(unpackedCollection))} </li> ` +
             `  <li>NFT Item Metadata : ${p.nftItemContentPacked == undefined ? "unchanged" : "CHANGED:" + unpackedItem.toString() } </li> ` +            
             `</ol>` 
+            return result
     
         } catch (e) {
         }    
@@ -936,12 +941,17 @@ export class AMMOrders {
     
             console.log(`  Base Fee     : ${baseFee}%     Active Fee   : ${activeFee}%    Protocol Fee ${protocolFee}% `)    
     
-            return `Change fees:<br/>` + 
+            let result = `Change fees for:<br/>` 
+            result += await poolSnippet(msg.info.dest as Address, isTestnet)
+
+            result += `<br/>` +
             `<table>` +
             `<tr><td>Active fee   <td/> ${p.currentFee}  <td/> | <td/>${activeFee}   % <td/></tr>` + 
             `<tr><td>Base fee     <td/> ${p.lpFee}       <td/> | <td/>${baseFee}     % <td/></tr>` + 
             `<tr><td>Protocol Fee <td/> ${p.protocolFee} <td/> | <td/>of current Fee ${protocolFeeOfActive} %, of swap amount ${protocolFee} % <td/></tr>` + 
             `</table>`;
+
+            return result;
     
         } catch (e) {
         }   
@@ -984,7 +994,9 @@ export class AMMOrders {
             let dest = msg.info.dest as Address
             let destS = await formatAddressAndUrl(dest, isTestnet)
 
-            return `Soft Lock pool ${destS}`
+            let result = `Soft <font color="red">Lock</font> pool &nbsp; ${destS} <br/>`
+            result += await poolSnippet(dest, isTestnet)
+            return result
         } catch (e) {
         }  
 
@@ -992,8 +1004,10 @@ export class AMMOrders {
             let p = PoolV3Contract.unpackUnlockPoolMessage(cell)
             let dest = msg.info.dest as Address
             let destS = await formatAddressAndUrl(dest, isTestnet)
-
-            return `Soft Unlock pool ${destS}`
+      
+            let result = `Soft <font color="green">Unlock</font> pool &nbsp; ${destS} <br/>`
+            result += await poolSnippet(dest, isTestnet)
+            return result
         } catch (e) {
         }  
 
