@@ -1,17 +1,6 @@
-import {
-    Address,
-    Cell,
-    Contract,
-    ContractGetMethodResult,
-    ContractProvider,
-    ContractState,
-    OpenedContract,
-    Sender,
-    SendMode,
-    Transaction,
-    TupleItem
-} from "@ton/core";
-import {TonClient} from "@ton/ton";
+import { AccountState, AccountStorage, Address, Cell, Contract, ContractGetMethodResult, ContractProvider, ContractState, loadShardAccount, OpenedContract, Sender, SendMode,Transaction, TupleItem } from "@ton/core";
+import {TonClient, TonClient4} from "@ton/ton";
+import {getHttpV4Endpoint } from "@orbs-network/ton-access";
                 
 //const API_KEY = 'f200a6fdba67f4cd27bf0c69c28165305516fd503930a0c82456f9f763eeb773'
 const API_KEY = 'd843619b379084d133f061606beecbf72ae2bf60e0622e808f2a3f631673599b';
@@ -62,6 +51,42 @@ export const sendToTonApi = async (method: string, params: any, isTestnet: boole
         throw new Error(json.error);
     }
     return json;
+}
+
+
+export async function getAccountState(contractAddress: Address, isTestnet : boolean) : Promise<AccountStorage>
+{
+    let endpoint = await getHttpV4Endpoint({ network: isTestnet ? "testnet" : "mainnet"})
+    let client =  new TonClient4({ endpoint })
+    
+    let seqno = (await client.getLastBlock()).last.seqno;
+    let state = await client.getAccount(seqno, contractAddress );
+
+    let result : AccountState 
+    if (state.account.state.type == "uninit") {
+        result = { type : "uninit" }
+    }
+    if (state.account.state.type == "frozen") {
+        result = { 
+            type : "frozen", 
+            stateHash : BigInt(state.account.state.stateHash) 
+        }
+    }
+    if (state.account.state.type == "active") {
+        result = {
+            type : "active",
+            state : {
+                code : Cell.fromBase64(state.account.state.code),
+                data : Cell.fromBase64(state.account.state.data)                
+            }
+        }        
+    }
+
+    return {
+        lastTransLt : BigInt(state.account.last.lt),
+        balance : {coins : BigInt(state.account.balance.coins)},
+        state : result
+    }
 }
 
 export class MyNetworkProvider implements ContractProvider {

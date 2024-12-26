@@ -6,15 +6,16 @@ import {
     formatAddressAndUrl,
     getAddressFormat, sanitizeHTML,
 } from "../utils/utils";
-import {Address, Cell, Dictionary, fromNano, loadMessageRelaxed} from "@ton/core";
+import {AccountStorage, Address, Cell, Dictionary, fromNano, loadMessageRelaxed} from "@ton/core";
 import {cellToArray, endParse} from "./Multisig";
 import {Order, parseOrderData} from "./Order";
 import {MultisigInfo} from "./MultisigChecker";
-import {MyNetworkProvider, sendToIndex} from "../utils/MyNetworkProvider";
+import {getAccountState, MyNetworkProvider, sendToIndex} from "../utils/MyNetworkProvider";
 import {intToLockType, JettonMinter, lockTypeToDescription} from "../jetton/JettonMinter";
 import {CommonMessageInfoRelaxedInternal} from "@ton/core/src/types/CommonMessageInfoRelaxed";
 import { ContractOpcodes } from "../amm/opCodes";
 import { parseActionBody } from "../orders";
+import { AccountStateActive } from "@ton/core/dist/types/AccountState";
 
 export interface MultisigOrderInfo {
     address: AddressInfo;
@@ -47,15 +48,19 @@ export const checkMultisigOrder = async (
 
     // Account State and Data
 
-    const result = await sendToIndex('account', {address: addressToString(multisigOrderAddress)}, isTestnet);
-    assert(result.status === 'active', "Contract not active. If you have just created an order it should appear within ~30 seconds.");
+    //const result = await sendToIndex('account', {address: addressToString(multisigOrderAddress)}, isTestnet);
+    //assert(result.status === 'active', "Contract not active. If you have just created an order it should appear within ~30 seconds.");
+    //assert(Cell.fromBase64(result.code).equals(multisigOrderCode), 'The contract code DOES NOT match the multisig-order code from this repository');
+    //const tonBalance = result.balance;
+    //const data = Cell.fromBase64(result.data);
+    const result : AccountStorage = await getAccountState(multisigOrderAddress.address, isTestnet)
+    console.log(result)
+    assert(result.state.type === 'active', "Contract not active. If you have just created a multisig it should appear within ~30 seconds.");
+    const state = (result.state as AccountStateActive).state
+    assert(state.code.equals(multisigOrderCode), 'The contract code DOES NOT match the multisig code from this repository');
+    const tonBalance = result.balance.coins;
 
-    assert(Cell.fromBase64(result.code).equals(multisigOrderCode), 'The contract code DOES NOT match the multisig-order code from this repository');
-
-    const tonBalance = result.balance;
-
-    const data = Cell.fromBase64(result.data);
-    const parsedData = parseOrderData(data);
+    const parsedData = parseOrderData(state.data);
 
     checkNumber(parsedData.threshold);
     assert(parsedData.threshold > 0, "Threshold not positive")

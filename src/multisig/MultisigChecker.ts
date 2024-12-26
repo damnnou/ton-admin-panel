@@ -6,12 +6,13 @@ import {
     formatAddressAndUrl,
     getAddressFormat
 } from "../utils/utils";
-import {Address, Cell, Dictionary} from "@ton/core";
+import {AccountState, AccountStorage, Address, Cell, Dictionary} from "@ton/core";
 import {endParse, Multisig, parseMultisigData} from "./Multisig";
-import {MyNetworkProvider, sendToIndex, sendToTonApi} from "../utils/MyNetworkProvider";
+import {getAccountState, MyNetworkProvider, sendToIndex, sendToTonApi} from "../utils/MyNetworkProvider";
 import {Op} from "./Constants";
 import {Order} from "./Order";
 import {checkMultisigOrder, MultisigOrderInfo} from "./MultisigOrderChecker";
+import { AccountStateActive } from "@ton/core/dist/types/AccountState";
 
 const parseNewOrderInitStateBody = (cell: Cell) => {
     const slice = cell.beginParse();
@@ -113,15 +114,21 @@ export const checkMultisig = async (
 
     // Account State and Data
 
-    const result = await sendToIndex('account', {address: addressToString(multisigAddress)}, isTestnet);
+    /*const result = await sendToIndex('accountStates', {address: addressToString(multisigAddress)}, isTestnet);
+    console.log(result)
     assert(result.status === 'active', "Contract not active. If you have just created a multisig it should appear within ~30 seconds.");
-
-    assert(Cell.fromBase64(result.code).equals(multisigCode), 'The contract code DOES NOT match the multisig code from this repository');
-
+    assert(Cell.fromBase64(result.code_boc).equals(multisigCode), 'The contract code DOES NOT match the multisig code from this repository');
     const tonBalance = result.balance;
-
     const data = Cell.fromBase64(result.data);
-    const parsedData = parseMultisigData(data);
+    */
+    const result : AccountStorage = await getAccountState(multisigAddress.address, isTestnet)
+    console.log(result)
+    assert(result.state.type === 'active', "Contract not active. If you have just created a multisig it should appear within ~30 seconds.");
+    const state = (result.state as AccountStateActive).state
+    assert(state.code.equals(multisigCode), 'The contract code DOES NOT match the multisig code from this repository');
+    const tonBalance = result.balance.coins;
+    
+    const parsedData = parseMultisigData(state.data);
 
     if (parsedData.allowArbitraryOrderSeqno) {
         assert(parsedData.nextOderSeqno === BigInt(0), 'invalid nextOrderSeqno for allowArbitraryOrderSeqno');
