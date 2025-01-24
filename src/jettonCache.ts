@@ -2,7 +2,6 @@ import { Address } from "@ton/core"
 import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider, sendToTonApi } from "./utils/MyNetworkProvider"
 import { unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
-import { PTonMinterV2 } from "./amm/common/PTonMinterV2";
 import { escapeHtml } from "./utils/utils";
 
 
@@ -44,16 +43,22 @@ export async function getJettonMetadata(minterAddress : Address, isTestnet : boo
             
                 const data = await response.json();  // Parse the JSON*/
                 metadata = result.metadata 
-              } catch (error) {
+            } catch (error) {
                 console.error("Failed to download and parse JSON", error);
                 throw error;  // Rethrow the error for further handling
-              }
+            }
         }
 
-
+        if (metadata.decimals === undefined) {
+            metadata.decimals = "9"
+        }
         loaded = true
         for (let key of Object.keys(metadata)) {
-            metadata[key] = escapeHtml(metadata[key])
+            if (typeof (metadata[key]) == "string" ) {
+                metadata[key] = escapeHtml(metadata[key])
+            } else {
+                console.log(`We have a non-string metadata: ${metadata[key]}. Type ${typeof metadata[key]}`)
+            }
         }
         jettonCache[name] = metadata
     }
