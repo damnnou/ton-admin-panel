@@ -237,20 +237,25 @@ export class AMMOrders {
                 }
             },
             {
-                name: 'Change Router Params (Pool Admin, Pool Factory)',
+                name: 'Change Router Params (Pool Admin, Pool Factory, Throttling)',
                 fields: {
                     router   : { name: 'Router', type: 'Address' },
                     amount   : { name: 'TON Amount', type: 'TON', default : '0.1' },                    
-                    newPoolAdmin   : { name: 'New Pool Admin', type: 'Address' },
-                    newPoolFactory : { name: 'New Pool Factory', type: 'Address' }, 
+                    newPoolAdmin   : { name: 'New Pool Admin ( addr_none() for unchanged)' , type: 'Address' },
+                    newPoolFactory : { name: 'New Pool Factory ( addr_none() for unchanged)', type: 'Address' }, 
+                    throttlingRate : { name: 'Update 1 day mint throttling rate (< 0 for unchanged)', type : 'BigInt', default: "-1" },
+                    lastKnownHour  : { name: 'Last known hour for throttling (< 0 for unchanged)', type : 'BigInt', default: "-1" }
+
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     return {
                         toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
                         body: RouterV3Contract.changeRouterParamMessage({                        
-                            newPoolAdmin : values.newPoolAdmin.address,
-                            newPoolFactory : values.newPoolFactory.address,                            
+                            newPoolAdmin : values.newPoolAdmin.address ? undefined : values.newPoolAdmin.address,
+                            newPoolFactory : values.newPoolFactory.address ? undefined : values.newPoolFactory.address,
+                            newThrottlingRate : values.throttlingRate < 0 ? undefined : values.throttlingRate,
+                            newLastHour :  values.lastKnownHour < 0 ? undefined : values.lastKnownHour            
                         })
                     };
                 }
@@ -777,7 +782,11 @@ export class AMMOrders {
                     `New Admin: ${(p.newAdmin) ? await formatAddressAndUrl(p.newAdmin, isTestnet) :  "unchanged"}</br>` +
                     `New Flags: ${(p.newFlags !== undefined) ? "0x" + p.newFlags.toString(16) : "unchanged"}</br>` +                     
                     ((p.newFlags) ? 
-                    `&nbsp; Multihop  : ${(p.newFlags & 0x0001n) ? "ON" : "OFF" }  </br>` + 
+                    `&nbsp; Multihop    : ${(p.newFlags & 0x0001n) ? "ON" : "OFF" }  </br>` + 
+                    `&nbsp; Shortcut    : ${(p.newFlags & 0x0002n) ? "ON" : "OFF" }  </br>` + 
+                    `&nbsp; Direct Ton  : ${(p.newFlags & 0x0004n) ? "ON" : "OFF" }  </br>` + 
+                    `&nbsp; Throttling  : ${(p.newFlags & 0x0008n) ? "ON" : "OFF" }  </br>` + 
+
                     `&nbsp; Emergency : ${(p.newFlags & 0x1000n) ? "ON" : "OFF" }  </br>`                      
                     : "" ) +
                     `New Code: ${p.newCode ? p.newCode.hash(0).toString("hex") : "unchanged" }</br>`                   
@@ -793,11 +802,17 @@ export class AMMOrders {
 
         try {
             let p = RouterV3Contract.unpackChangeRouterParamMessage(cell)
-            const newParams = await formatAddressAndUrl(p.newPoolFactory, isTestnet)
+            const newPoolAdminS   = p.newPoolAdmin ?   await formatAddressAndUrl(p.newPoolFactory, isTestnet) : "unchanged"
+            const newPoolFactoryS = p.newPoolFactory ? await formatAddressAndUrl(p.newPoolFactory, isTestnet) : "unchanged"
+            
 
             return `Order to change pool factory for the Router <br/>` +                   
-                   `New Pool Admin:   ${p.newPoolAdmin ? await formatAddressAndUrl(p.newPoolAdmin, isTestnet) : "unchanged" } </br>` + 
-                   `New Pool Factory: ${p.newPoolFactory ? await formatAddressAndUrl(p.newPoolFactory, isTestnet) : "unchanged" } </br>` 
+                   `New Pool Admin:   ${newPoolAdminS} </br>` + 
+                   `New Pool Factory: ${newPoolFactoryS} </br>` +
+                   
+                   `New Throttling Rate: ${p.newThrottlingRate ? p.newThrottlingRate : "unchanged" } </br>` +
+                   `New Last Hour: ${p.newLastHour ? (p.newLastHour + " " + new Date(p.newLastHour * 60 * 60 * 1000).toString()) : "unchanged" } </br>` 
+                   
         } catch (e) {
         }
 

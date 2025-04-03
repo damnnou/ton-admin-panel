@@ -1,9 +1,9 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode, Slice } from "@ton/core";
 import { ContractErrors, ContractOpcodes, OpcodesLookup } from "./opCodes";
-import { ContractMessageMeta, DummyCell } from "./DummyCell";
 import { BLACK_HOLE_ADDRESS, nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract";
-import { FEE_DENOMINATOR, IMPOSSIBLE_FEE } from "./frontmath/frontMath";
-import { MetaMessage, StructureVisitor } from "./structureVisitor";
+import { FEE_DENOMINATOR, IMPOSSIBLE_FEE, MaxUint256 } from "./frontmath/frontMath";
+import { ContractMessageMeta, MetaMessage, StructureVisitor } from "./meta/structureVisitor";
+import { ParseDataVisitor } from "./meta/parseDataVisitor";
 
 /** Initial data structures and settings **/
 export const TIMELOCK_DELAY_DEFAULT : bigint = 5n * 60n;
@@ -21,11 +21,19 @@ export type RouterV3ContractConfig = {
     timelockDelay? : bigint;
 
     nonce? : bigint;
+
+    throttling? : {
+        mint_limit : number,
+        last_hour  : number, 
+        history : number[]
+
+    }
 }
 
 
 export function routerv3ContractConfigToCell(config: RouterV3ContractConfig): Cell {
-    return beginCell()
+
+    let result = beginCell()
         .storeAddress(config.adminAddress)
         .storeAddress(config.poolAdminAddress ?? config.adminAddress) 
         .storeAddress(config.poolFactoryAddress)
@@ -43,7 +51,28 @@ export function routerv3ContractConfigToCell(config: RouterV3ContractConfig): Ce
             .storeUint(0,3)   // 3 maybe refs for active timelocks
         .endCell())
         .storeUint(config.nonce ?? 0, 64)
-    .endCell()    
+
+    if (config.throttling) {
+        let packed512 : bigint = 0n
+        for (let i = 0; i < 24; i++) {
+            packed512 = packed512 << 16n;
+            packed512 |= BigInt((config.throttling.history[23 - i]) & 0xFFFF)
+        }
+
+        let i0 = (packed512 >> 256n) & MaxUint256;
+        let i1 = (packed512) & MaxUint256;
+
+        let throttlingBulder = beginCell()
+            .storeUint(config.throttling.mint_limit, 16)
+            .storeUint(config.throttling.last_hour, 60)
+            .storeUint(i0, 256)
+            .storeUint(i1, 256)
+            
+                    
+        result.storeRef(throttlingBulder.endCell())
+    }
+
+    return result.endCell()    
 }
 
 export function routerv3ContractCellToConfig(c: Cell): RouterV3ContractConfig {
@@ -69,7 +98,31 @@ export function routerv3ContractCellToConfig(c: Cell): RouterV3ContractConfig {
         nonce = s.loadUintBig(64)
     }
 
-    return {adminAddress, poolAdminAddress, poolFactoryAddress, flags, poolv3_code, accountv3_code, position_nftv3_code, timelockDelay, nonce}
+    let throttling :{
+        mint_limit : number,
+        last_hour  : number, 
+        history : number[]
+    } | undefined = undefined
+
+    if (s.remainingRefs != 0 ) {
+        const throttlingSlice : Slice = s.loadRef().beginParse()
+        let mint_limit = throttlingSlice.loadUint(16)
+        let last_hour  = throttlingSlice.loadUint(60) 
+        let i0 = throttlingSlice.loadUintBig(256)
+        let i1 = throttlingSlice.loadUintBig(256)
+        let packed512 : bigint = (i0 << 256n) | i1;
+        
+        let history : number[] = []
+        for (let i = 0; i < 24; i++)
+        {
+            history.push(Number(packed512 & 0xFFFFn));
+            packed512 = packed512 >> 16n;
+
+        }
+        throttling = {mint_limit, last_hour, history}
+    }
+
+    return {adminAddress, poolAdminAddress, poolFactoryAddress, flags, poolv3_code, accountv3_code, position_nftv3_code, timelockDelay, nonce, throttling}
 }
 
 export class RouterV3Contract implements Contract {
@@ -341,7 +394,8 @@ export class RouterV3Contract implements Contract {
     static changeRouterParamMessage(opts : {
         newPoolAdmin? : Address,
         newPoolFactory? : Address,
-     //   newFlags? : bigint
+        newThrottlingRate? : number,
+        newLastHour? : number
     } ) : Cell {
         return beginCell()
             .storeUint(ContractOpcodes.ROUTERV3_CHANGE_PARAMS, 32) // OP code
@@ -350,12 +404,18 @@ export class RouterV3Contract implements Contract {
             .storeAddress(opts.newPoolFactory ?? BLACK_HOLE_ADDRESS)
             .storeUint(opts.newPoolAdmin ? 1 : 0, 1)
             .storeAddress(opts.newPoolAdmin ?? BLACK_HOLE_ADDRESS)            
+            .storeUint(opts.newThrottlingRate ? 1 : 0, 1)
+            .storeUint(opts.newThrottlingRate ?? 1500, 16)            
+            .storeUint(opts.newLastHour ? 1 : 0, 1)
+            .storeUint(opts.newLastHour ?? 0, 60)      
         .endCell();
     }
 
     static unpackChangeRouterParamMessage( body :Cell) : {
         newPoolAdmin? : Address        
         newPoolFactory? : Address
+        newThrottlingRate? : number,
+        newLastHour? : number
     }
     {
         let s = body.beginParse()
@@ -365,20 +425,34 @@ export class RouterV3Contract implements Contract {
 
         const query_id = s.loadUint(64)
         const hasPoolFactory = s.loadBit()      
-        const newPoolFactoryV = s.loadAddress()
+        const newPoolFactoryV = s.loadAddressAny() as (Address | null)
         const newPoolFactory = hasPoolFactory ? newPoolFactoryV : undefined
 
         const hasPoolAdmin = s.loadBit()
-        const newPoolAdminV = s.loadAddress()
+        const newPoolAdminV = s.loadAddressAny() as (Address | null)
         const newPoolAdmin = hasPoolAdmin ? newPoolAdminV : undefined
+
+        let newThrottlingRate = undefined
+        let newLastHour = undefined
+        if (s.remainingBits > 0) {        
+            const hasThrottlingRate = s.loadBit()
+            const newThrottlingRateV = s.loadUint(16)
+            newThrottlingRate = hasThrottlingRate ? newThrottlingRateV : undefined
+
+            const hasLastHour = s.loadBit()
+            const newLastHourV = s.loadUint(60)
+            newLastHour = hasLastHour ? newLastHourV : undefined
+        }
         
-        return {newPoolAdmin, newPoolFactory}
+        return {newPoolAdmin, newPoolFactory, newThrottlingRate, newLastHour}
     }
 
     async sendChangeRouterParams(provider: ContractProvider, sender: Sender, value: bigint, 
         opts : {
-            newPoolAdmin? : Address        
-            newPoolFactory? : Address           
+            newPoolAdmin? : Address,  
+            newPoolFactory? : Address,
+            newThrottlingRate? : number,
+            newLastHour? : number 
         }
     ) {
         const msg_body = RouterV3Contract.changeRouterParamMessage(opts)
@@ -515,8 +589,29 @@ export class RouterV3Contract implements Contract {
       return stack.readCell();
     }
 
+    /* Only in debug builds */
 
-    static metaDescription1 : MetaMessage[] =     
+    async getShift2Left(provider: ContractProvider, i0: bigint, i1: bigint, shift: number) : Promise<[bigint, bigint]> {
+        const { stack } = await provider.get("shl2int", [
+            { type: 'int', value: i0 },
+            { type: 'int', value: i1 },
+            { type: 'int', value: BigInt(shift) },          
+        ]);
+        return [stack.readBigNumber(), stack.readBigNumber()];
+    }
+
+    async getLogicShift(provider: ContractProvider, x: bigint, shift: number) : Promise<bigint> {
+        const { stack } = await provider.get("logic_lshift", [
+            { type: 'int', value: x },          
+            { type: 'int', value: BigInt(shift) },          
+        ]);
+        return stack.readBigNumber();
+    }
+    
+
+    /* META */
+
+    static metaDescription : MetaMessage[] =     
     [
     {
         opcode : ContractOpcodes.JETTON_TRANSFER_NOTIFICATION,
@@ -571,6 +666,12 @@ export class RouterV3Contract implements Contract {
             visitor.visitField({ name:`liquidity` , type:`Uint`,    size:128, meta:"",   comment : "Amount of liquidity to mint"})
             visitor.visitField({ name:`tickLower` , type:`Int`,     size:24,  meta:"",   comment : "lower bound of the range in which to mint"}) 
             visitor.visitField({ name:`tickUpper` , type:`Int`,     size:24,  meta:"",   comment : "upper bound of the range in which to mint"})  
+            visitor.enterCell( { name:"referral_cell",  type:`IfExists`, comment : "Cell with referral data"})
+                visitor.visitField({ name:`referral_code`,  type:`Uint`,    size:32,  meta:"",  comment: ""}) 
+                visitor.predicateStart( { action : "=", arg1: "referral_code", arg2: 0x5453544B})
+                visitor.visitField({ name:`referral_address`,      type:`Address`, size:267, meta:"",        comment: "Address of the referrer"})
+                visitor.predicateEnd()
+            visitor.leaveCell({})
         }
     },
     {
@@ -580,6 +681,7 @@ export class RouterV3Contract implements Contract {
 
         acceptor : (visitor: StructureVisitor) => {
             visitor.visitField({ name:`op`,                  type:`Uint`,    size:32,  meta:"op",  comment: ""})   
+            visitor.visitField({ name:`target_jetton_wallet`,type:`Address`, size:267, meta:"", comment:""})  
             visitor.visitField({ name:`sqrtPriceLimitX96`,   type:`Uint`,    size:160, meta:"PriceX96", comment: "Limit price. Swap won't go beyond it"}) 
             visitor.visitField({ name:`minOutAmount`,        type:`Coins`,   size:124, meta:"",    comment : ""}) 
             visitor.visitField({ name:`owner_address`,       type:`Address`, size:267, meta:"",    comment: "Address of the sender"})
@@ -591,6 +693,9 @@ export class RouterV3Contract implements Contract {
             visitor.visitField({ name:`ret_forward_amount`,  type:`Coins`,   size:124, meta:"",    comment : ""}) 
             visitor.visitField({ name:`ret_forward_payload`, type:`Cell`,  size:0, meta:"Payload", comment: "Payload for processing by owner with change/return coins"}) 
             visitor.leaveCell({})
+            visitor.enterCell( { name:"referral_cell",       type:`IfExists`, comment : "Cell with referral data"})
+            visitor.visitField({ name:`code`,                type:`Uint`,    size:32,  meta:"",  comment: ""})               
+            visitor.leaveCell({})
         }
     },   
     {
@@ -599,45 +704,52 @@ export class RouterV3Contract implements Contract {
         acceptor : (visitor: StructureVisitor) => {
             visitor.visitField({ name:`op`,       type:`Uint`,    size:32,  meta:"op", comment: ""})    
             visitor.visitField({ name:`query_id`, type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"}) 
-            visitor.visitField({ name:`owner0`,   type:`Address`, size:267, meta:"",   comment: "Address of the sender"})
-            visitor.visitField({ name:`owner1`,   type:`Address`, size:267, meta:"",   comment: "Address of the sender"})
+            visitor.visitField({ name:`reciever0`, type:`Address`, size:267, meta:"",   comment: "Address of the first reciever of the funds"})
+            visitor.visitField({ name:`reciever1`, type:`Address`, size:267, meta:"",   comment: "Address of the second reciever of the funds"})
 
             visitor.visitField({ name:`exit_code`,type:`Uint`,    size:32,  meta:"",   comment: "queryid as of the TON documentation"}) 
             visitor.visitField({ name:`seqno`   , type:`Uint`,    size:64,  meta:"Indexer",   comment: "queryid as of the TON documentation"}) 
             visitor.enterCell( { name:"coinsinfo_cell",  type:`Maybe`, comment : "Cell with info about the coins"})
-            visitor.visitField({ name:`amount0`,         type:`Coins`,   size:124,     meta:"",        comment : ""}) 
-            visitor.visitField({ name:`jetton0_address`, type:`Address`, size:267,  meta:"Payload", comment: "Payload for processing by target with swapped coins"}) 
-            visitor.visitField({ name:`amount1`,         type:`Coins`, size:124,     meta:"",        comment : ""}) 
-            visitor.visitField({ name:`jetton1_address`, type:`Address`,  size:267,  meta:"Payload", comment: "Payload for processing by owner with change/return coins"}) 
+                visitor.visitField({ name:`amount0`,         type:`Coins`,    size:124,  meta:"", comment : "Amount of coins to be payed to reciever0"}) 
+                visitor.visitField({ name:`jetton0_address`, type:`Address`,  size:267,  meta:"", comment : "Jetton to be sent to reciever0 identified by the wallet that belongs to router"}) 
+                visitor.visitField({ name:`amount1`,         type:`Coins`,    size:124,  meta:"", comment : "Amount of coins to be payed to reciever1"}) 
+                visitor.visitField({ name:`jetton1_address`, type:`Address`,  size:267,  meta:"", comment:  "Jetton to be sent to reciever1 identified by the wallet that belongs to router"}) 
+                visitor.enterCell( { name:"indexer_swap_info_cell",  type:`IfExists`, comment : "Information about the payload"})
+                    visitor.visitField({ name:`payload_amount0`,  type:`Coins`, size:124, meta:""     , comment: ""}) 
+                    visitor.visitField({ name:`payload_0`,        type:`Cell`,  size:1,   meta:"Maybe, Payload", comment: ""}) 
+                    visitor.visitField({ name:`payload_amount1`,  type:`Coins`, size:124, meta:""     , comment: ""})   
+                    visitor.visitField({ name:`payload_1`,        type:`Cell`,  size:1,   meta:"Maybe, Payload", comment: ""})                   
+                visitor.leaveCell({})
             visitor.leaveCell({})
 
-            visitor.visitField({ name:`indexerinfo_cell`, type:`Cell`, meta: `Metadata`, size:0, comment: "Metadata for the NFT Collection" })
-            //visitor.enterCell( { name:"indexerinfo_cell",  type:`Maybe`, comment : "Cell with indexer"})
-            //visitor.leaveCell({})
-            /*
-             if (hasIndexerInfo) {
-                let p1 = p.loadRef().beginParse()
-                if (exit_code == RouterV3Contract.RESULT_SWAP_OK) {
-                    result.push({ name:`liquidity` ,           value: `${p1.loadUint(128)}`   , type:`Uint(128),Indexer`})   
-                    result.push({ name:`price_sqrt`,           value: `${p1.loadUintBig(160)}`, type:`Uint(160),Indexer,PriceX96`}) 
-                    result.push({ name:`tick`,                 value: `${p1.loadInt(24)  }`   , type:`Int(24),Indexer`})
-                    result.push({ name:`feeGrowthGlobal0X128`, value: `${p1.loadInt(24)  }`   , type:`Int(256),Indexer`})
-                    result.push({ name:`feeGrowthGlobal1X128`, value: `${p1.loadInt(24)  }`   , type:`Int(256),Indexer`})   
-                }
+            //visitor.visitField({ name:`indexerinfo_cell`, type:`Cell`, meta: `Maybe`, size:0, comment: "Information for indexer to process" })
 
-                if (exit_code == RouterV3Contract.RESULT_BURN_OK) {
-                    result.push({ name:`nftIndex`,        value: `${p1.loadUint(64) }`, type:`Uint(64),Indexer`})      
-                    result.push({ name:`liquidityBurned`, value: `${p1.loadUint(128)}`, type:`Uint(128),Indexer`})                 
-                    result.push({ name:`tickLower`,       value: `${p1.loadInt(24)  }`, type:`Int(24),Indexer`})
-                    result.push({ name:`tickUpper`,       value: `${p1.loadInt(24)  }`, type:`Int(24),Indexer`})
-                    result.push({ name:`tick`,            value: `${p1.loadInt(24)  }`, type:`Int(24),Indexer`})                
-                }
-            */
+            visitor.predicateStart( { action : "=", arg1: "exit_code", arg2: RouterV3Contract.RESULT_SWAP_OK})
+            visitor.enterCell( { name:"indexer_swap_info_cell",  type:`Maybe`, comment : "Information for indexer to process after the swap"})
+                visitor.visitField({ name:`liquidity` ,           type:`Uint`, size:128, meta:"Indexer",          comment: "Post-swap concentrated liquidity at current tick" })   
+                visitor.visitField({ name:`price_sqrt`,           type:`Uint`, size:160, meta:"Indexer,PriceX96", comment: "Post-swap square root of the  price stored as fixed point 64.96" }) 
+                visitor.visitField({ name:`tick`,                 type:`Int`,  size:24,  meta:"Indexer",          comment: "Post-swap current tick" })
+                visitor.visitField({ name:`feeGrowthGlobal0X128`, type:`Int`,  size:256, meta:"Indexer",          comment: "Current range fee per unit of the liquidity for jetton0" })
+                visitor.visitField({ name:`feeGrowthGlobal1X128`, type:`Int`,  size:256, meta:"Indexer",          comment: "Current range fee per unit of the liquidity for jetton1" })   
+            visitor.leaveCell({})
+            visitor.predicateEnd()
+
+            visitor.predicateStart( { action : "=", arg1: "exit_code", arg2: RouterV3Contract.RESULT_BURN_OK})
+            visitor.enterCell( { name:"indexer_burn_info_cell",  type:`Maybe`, comment : "Information for indexer to process after the burn"})
+                visitor.visitField({ name:`nftIndex`,        type:`Uint`, size:64,  meta:"Indexer", comment:"Nft index that is burned"})      
+                visitor.visitField({ name:`liquidityBurned`, type:`Uint`, size:128, meta:"Indexer", comment:"Amount of liquidity burned"}) 
+                visitor.visitField({ name:`tickLower`,       type:`Int`,  size:24,  meta:"Indexer", comment:"Lower tick of the range in which liquidity was burned"})
+                visitor.visitField({ name:`tickUpper`,       type:`Int`,  size:24,  meta:"Indexer", comment:"Upper tick of the range in which liquidity was burned"})
+                visitor.visitField({ name:`tick`,            type:`Int`,  size:24,  meta:"Indexer", comment:"Post-burn current tick"})   
+            visitor.leaveCell({})
+            visitor.predicateEnd()            
         }
     },
     {
         opcode : ContractOpcodes.ROUTERV3_RESET_GAS,
-        description : "",
+        name : "ROUTERV3_RESET_GAS",
+        description : "This operation allows router owners the gas if too much accumulated on the contract",      
+        rights : "This operation is allowed for router::admin_address",
         acceptor : (visitor: StructureVisitor) => {
             visitor.visitField({ name:`op`,               type:`Uint`,    size:32,  meta:"op", comment: ""})    
             visitor.visitField({ name:`query_id`,         type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"})     
@@ -645,6 +757,7 @@ export class RouterV3Contract implements Contract {
     },
     {
         opcode : ContractOpcodes.ROUTERV3_CHANGE_ADMIN_START,
+        access: "private",
         description : "",
         acceptor : (visitor: StructureVisitor) => {
             visitor.visitField({ name:`op`,         type:`Uint`,    size:32,  meta:"op", comment: ""})    
@@ -654,6 +767,7 @@ export class RouterV3Contract implements Contract {
     },
     {
         opcode : ContractOpcodes.ROUTERV3_CHANGE_ADMIN_COMMIT,
+        access: "private",
         description : "",
         acceptor : (visitor: StructureVisitor) => {
             visitor.visitField({ name:`op`,               type:`Uint`,    size:32,  meta:"op", comment: ""})    
@@ -675,159 +789,20 @@ export class RouterV3Contract implements Contract {
     public static RESULT_SWAP_OK = ContractErrors.POOLV3_RESULT_SWAP_OK;
     public static RESULT_BURN_OK = ContractErrors.POOLV3_RESULT_BURN_OK;
 
-    static printParsedInput(body: Cell | DummyCell) : ContractMessageMeta[] {
+    static printParsedInput(body: Cell) : ContractMessageMeta[] {
+
         let result : ContractMessageMeta[] = []
-
-        const OpLookup : {[key : number] : string} = OpcodesLookup
         let p = body.beginParse()        
-        let op : number  = p.loadUint(32)
-        console.log("op == ", OpLookup[op])
+        let op : number  = p.preloadUint(32)
 
-        p = body.beginParse()
-        if (op == ContractOpcodes.JETTON_TRANSFER_NOTIFICATION)
-        {          
-            result.push({ name:`op`,            value: `${p.loadUint(32)  }`, type:`Uint(32) op`})  
-            result.push({ name:`query_id`,      value: `${p.loadUint(64)  }`, type:`Uint(64) `})  
-            result.push({ name:`jetton_amount`, value: `${p.loadCoins()   }`, type:`Coins() `})  
-            result.push({ name:`from_user`,     value: `${p.loadAddress() }`, type:`Address() `})  
-
-            let forwardPayload = p.loadMaybeRef()
-            if (forwardPayload) {
-                result.push({ name:`forward_payload`   , value: forwardPayload.toBoc().toString('hex') , type:`Cell(), Payload` })
-            } else {
-                result.push({ name:`forward_payload`   , value: `none` , type:`Cell()` })
+        for (let meta of this.metaDescription) {
+            if (op == meta.opcode) {
+                console.log(`Processing ${OpcodesLookup[op]}`)
+                let visitor = new ParseDataVisitor
+                visitor.visitCell(body, meta.acceptor)
+                result = [...result, ...visitor.result]
             }
         }
-
-        if (op == ContractOpcodes.ROUTERV3_CREATE_POOL)
-        {        
-            result.push({ name:`op`,               value: `${p.loadUint(32) }`, type:`Uint(32) op`, 
-              comment : "Operation that deploys and inits new [Pool](pool.md) contract for two given jettons identified by their wallets. New pool would reorder the jettons to match the " + 
-              "invariant `slice_hash(jetton0_address) > slice_hash(jetton1_address).`"})    
-            result.push({ name:`query_id`,         value: `${p.loadUint(64) }`, type:`Uint(64) `  , comment : "queryid as of the TON documentation"}) 
-            result.push({ name:`jetton_wallet0`,   value: `${p.loadAddress()}`, type:`Address()`  , comment: "Address of the jetton0 wallet. Used to compute pool address" })
-            result.push({ name:`jetton_wallet1`,   value: `${p.loadAddress()}`, type:`Address()`  , comment: "Address of the jetton1 wallet. Used to compute pool address" })
-            result.push({ name:`tick_spacing`,     value: `${p.loadInt(24)  }`, type:`Int(24)  `  , comment: "Tick spacing to be used in the pool"}) 
-            result.push({ name:`initial_priceX96`, value: `${p.loadUintBig(160)}`, type:`Uint(160),PriceX96`, comment: "Initial price for the pool"}) 
-
-            result.push({ name:`protocol_fee`,  value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Liquidity provider fee. base in FEE_DENOMINATOR parts. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
-            result.push({ name:`lp_fee_base`,   value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Protocol fee in FEE_DENOMINATOR. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
-            result.push({ name:`lp_fee_current`,value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Current value of the pool fee, in case of dynamic adjustment. If value is more than ${FEE_DENOMINATOR} value would be default`})
-
-            p.loadRef()
-            result.push({ name:`nftv3_content`   , value: `metadata` , type:`Cell(),Metadata` })
-            p.loadRef()            
-            result.push({ name:`nftv3item_content`,value: `metadata` , type:`Cell(),Metadata` })
-
-            let p1 = p.loadRef().beginParse()
-            result.push({ name:`jetton0_minter`,   value: `${p1.loadAddress()}`, type:`Address()`, comment: "Address of the jetton0 minter, used by indexer and frontend"})
-            result.push({ name:`jetton1_minter`,   value: `${p1.loadAddress()}`, type:`Address()`, comment: "Address of the jetton1 minter, used by indexer and frontend"})
-            if (p1.preloadUint(2) == 0) {
-                result.push({ name:`controller_addr`,  value: `null`, type:`Address()`, comment: "Address that is allowed to change the fee. Can always be updated by admin"})
-            } else {
-                result.push({ name:`controller_addr`,  value: `${p1.loadAddress()}`, type:`Address()`})
-            }
-        }
-
-        if (op == ContractOpcodes.POOLV3_FUND_ACCOUNT)
-        {
-            result.push({ name:`op`,            value: `${p.loadUint(32)    }`, type:`Uint(32) op`})  
-            result.push({ name:`jetton_target_w`, value: `${p.loadAddress() }`, type:`Address() `})              
-            result.push({ name:`enough0`,       value: `${p.loadCoins()     }`, type:`Coins()  `})  
-            result.push({ name:`enough1`,       value: `${p.loadCoins()     }`, type:`Coins()  `})
-            result.push({ name:`liquidity`,     value: `${p.loadUintBig(128)}`, type:`Uint(128)`}) 
-            result.push({ name:`tickLower`,     value: `${p.loadInt(24)     }`, type:`Int(24)  `})
-            result.push({ name:`tickUpper`,     value: `${p.loadInt(24)     }`, type:`Int(24)  `})
-        }
-        
-
-        if (op == ContractOpcodes.ROUTERV3_PAY_TO)
-        {          
-            result.push({ name:`op`,              value: `${p.loadUint(32)    }`, type:`Uint(32) op`})  
-            result.push({ name:`query_id`,        value: `${p.loadUintBig(64) }`, type:`Uint(64) `})             
-            result.push({ name:`owner0`,          value: `${p.loadAddress()   }`, type:`Address()`})  
-            result.push({ name:`owner1`,          value: `${p.loadAddress()   }`, type:`Address()`})  
-            
-            let exit_code = p.preloadUint(32)
-            result.push({ name:`exit_code`,       value: `${p.loadUint(32)    }`, type:`Uint(32) `})  
-            result.push({ name:`seqno`,           value: `${p.loadUintBig(64) }`, type:`Uint(64), Indexer`})  
-
-            let hasCoinsInfo    = p.preloadBit();
-            result.push({ name:`hasCoinsInfo`,       value: `${p.loadBoolean()  }`, type:`Boolean() `})  
-            let hasIndexerInfo  = p.preloadBit();
-            result.push({ name:`hasIndexerInfo`,     value: `${p.loadBoolean()  }`, type:`Boolean() `})  
-
-            if (hasCoinsInfo) {
-                let p1 = p.loadRef().beginParse()
-                result.push({ name:`amount0`,         value: `${p1.loadCoins()   }`, type:`Coins()  `})  
-                result.push({ name:`jetton0_address`, value: `${p1.loadAddress() }`, type:`Address()`})  
-                result.push({ name:`amount1`,         value: `${p1.loadCoins()   }`, type:`Coins()  `})  
-                result.push({ name:`jetton1_address`, value: `${p1.loadAddress() }`, type:`Address()`})      
-            }
-            
-            if (hasIndexerInfo) {
-                let p1 = p.loadRef().beginParse()
-
-                if (exit_code == RouterV3Contract.RESULT_SWAP_OK) {
-                    result.push({ name:`liquidity` ,           value: `${p1.loadUint(128)}`   , type:`Uint(128),Indexer`})   
-                    result.push({ name:`price_sqrt`,           value: `${p1.loadUintBig(160)}`, type:`Uint(160),Indexer,PriceX96`}) 
-                    result.push({ name:`tick`,                 value: `${p1.loadInt(24)  }`   , type:`Int(24),Indexer`})
-                    result.push({ name:`feeGrowthGlobal0X128`, value: `${p1.loadInt(24)  }`   , type:`Int(256),Indexer`})
-                    result.push({ name:`feeGrowthGlobal1X128`, value: `${p1.loadInt(24)  }`   , type:`Int(256),Indexer`})   
-                }
-
-                if (exit_code == RouterV3Contract.RESULT_BURN_OK) {
-                    result.push({ name:`nftIndex`,        value: `${p1.loadUint(64) }`, type:`Uint(64),Indexer`})      
-                    result.push({ name:`liquidityBurned`, value: `${p1.loadUint(128)}`, type:`Uint(128),Indexer`})                 
-                    result.push({ name:`tickLower`,       value: `${p1.loadInt(24)  }`, type:`Int(24),Indexer`})
-                    result.push({ name:`tickUpper`,       value: `${p1.loadInt(24)  }`, type:`Int(24),Indexer`})
-                    result.push({ name:`tick`,            value: `${p1.loadInt(24)  }`, type:`Int(24),Indexer`})                
-                }
-            }
-        }      
-
-        if (op == ContractOpcodes.ROUTERV3_RESET_GAS) {
-            result.push({ name:`op`,                value: `${p.loadUint(32)  }` , type:`Uint(32) op`})
-        }
-
-        if (op == ContractOpcodes.ROUTERV3_CHANGE_ADMIN_START) {
-            result.push({ name:`op`,               value: `${p.loadUint(32)  }`  , type:`Uint(32) op`})
-            result.push({ name:`new_admin`,        value: `${p.loadAddress() }`  , type:`Address()`})
-        }
-
-        if (op == ContractOpcodes.ROUTERV3_CHANGE_ADMIN_COMMIT) {
-            result.push({ name:`op`,               value: `${p.loadUint(32)  }`  , type:`Uint(32) op`})
-        }
-
-        if (op == ContractOpcodes.POOLV3_SWAP)
-        {      
-            result.push({ name:`op`,                value: `${p.loadUint(32)  }`  , type:`Uint(32) op`, comment: "Computes the swap math, and issues a command to the router to send funds. Only would be accepted from the router"})  
-            result.push({ name:`sender`,            value: `${p.loadAddress() }`  , type:`Address()`})  
-            result.push({ name:`sqrtPriceLimitX96`, value: `${p.loadUintBig(160)}`, type:`Uint(160),PriceX96`}) 
-            result.push({ name:`minOutAmount`     , value: `${p.loadCoins()  }`   , type:`Coins()  `})
-            result.push({ name:`owner_address`    , value: `${p.loadAddress() }`  , type:`Address()`})
-            let multihop_cell = p.loadMaybeRef()
-            if (multihop_cell) {
-                let multihopSlice = multihop_cell.beginParse()
-                //result.push({ name:`multihop_cell`   , value: multihop_cell.toBoc().toString('hex') , type:`Cell(), Payload` })
-                result.push({ name:`target_address`,      value: `${multihopSlice.loadAddress()}` , type:`Address()`, comment: ``})
-                result.push({ name:`ok_forward_amount`,   value: `${multihopSlice.loadCoins()}`   , type:`Coins()`  , comment: ``}) 
-                result.push({ name:`ok_forward_payload`,  value: `${multihopSlice.loadRef()}`     , type:`Cell()`   , comment: ``})
-                result.push({ name:`ret_forward_amount`,  value: `${multihopSlice.loadCoins()}`   , type:`Coins()`  , comment: ``})
-                result.push({ name:`ret_forward_payload`, value: `${multihopSlice.loadRef()}`     , type:`Cell()`   , comment: ``})
-            } else {
-                result.push({ name:`multihop_cell`   , value: `none` , type:`Cell()` })
-            }       
-        }      
-
-        if (op == ContractOpcodes.JETTON_EXCESSES)
-        {      
-            result.push({ name:`op`,                value: `${p.loadUint(32)  }`  , type:`Uint(32) op`})  
-            if (p.remainingBits != 0)
-                result.push({ name:`seqno`,                value: `${p.loadUint(64)  }`  , type:`Uint(64), Indexer`})  
-        }
-
         return result;
-
     }
 }
