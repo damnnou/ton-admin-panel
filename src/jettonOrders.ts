@@ -323,21 +323,29 @@ export class JettonOrders {
             /* */
             const walletAddress = msg.info.dest! as Address
             const jettonWallet : JettonWallet = JettonWallet.createFromAddress(walletAddress)        
-            const provider = new MyNetworkProvider(walletAddress, isTestnet)            
-            const jettonWalletData = await jettonWallet.getWalletData(provider)
-            const minterAddress = jettonWalletData.minter
-            const metadata = await getJettonMetadata(minterAddress, isTestnet)
+            const provider = new MyNetworkProvider(walletAddress, isTestnet)   
+            const walletAddressS = await formatAddressAndUrl(walletAddress, isTestnet)
 
-            const availableAmountPrintable =  BigNumber(jettonWalletData.balance.toString()).div(BigNumber(10).pow(BigNumber(metadata.decimals))).toFixed(9)            
-            const minterAddressS = await formatAddressAndUrl(parsed.toAddress, isTestnet)
-            const toAddressS = await formatAddressAndUrl(parsed.toAddress, isTestnet)
+            try {
+                const jettonWalletData = await jettonWallet.getWalletData(provider)
+                const minterAddress = jettonWalletData.minter
+                const metadata = await getJettonMetadata(minterAddress, isTestnet)
 
-            let transferAmountPrintable = BigNumber(parsed.jettonAmount.toString()).div(BigNumber(10).pow(BigNumber(metadata.decimals))).toFixed(9)
+                const availableAmountPrintable =  BigNumber(jettonWalletData.balance.toString()).div(BigNumber(10).pow(BigNumber(metadata.decimals))).toFixed(9)            
+                const minterAddressS = await formatAddressAndUrl(parsed.toAddress, isTestnet)
+                const toAddressS = await formatAddressAndUrl(parsed.toAddress, isTestnet)
 
-            return `Transfer <b>${transferAmountPrintable}</b> &nbsp; <span><img src="${metadata['image']}" width='24px' height='24px' > ${metadata["symbol"]} - ${metadata["name"]} [d:${metadata["decimals"]}]</span> <br/>\n `+
-            `  <b>Minter1:</b> ${minterAddressS}<br/>\n` + 
-            `  <b>To:</b> ${toAddressS} <br/>\n` + 
-            `  <b>FYI Current balance</b> (not at executions moment): ${availableAmountPrintable}`;
+                let transferAmountPrintable = BigNumber(parsed.jettonAmount.toString()).div(BigNumber(10).pow(BigNumber(metadata.decimals))).toFixed(9)
+
+                return `Transfer <b>${transferAmountPrintable}</b> &nbsp; <span><img src="${metadata['image']}" width='24px' height='24px' > ${metadata["symbol"]} - ${metadata["name"]} [d:${metadata["decimals"]}]</span> <br/>\n `+
+                `  <b>Minter1:</b> ${minterAddressS}<br/>\n` + 
+                `  <b>Wallet:</b> ${walletAddressS}<br/>\n` +
+                `  <b>To:</b> ${toAddressS} <br/>\n` + 
+                `  <b>FYI Current balance</b> (not at executions moment): ${availableAmountPrintable}`;
+            } catch {
+                return `This is a Transfer <b>${parsed.jettonAmount}</b> from wallet ;`+
+                       `  <b>Wallet:</b> ${walletAddressS}<br/> but we were unable to get wallet info. Is it deployed?\n` 
+            }
 
         } catch (e) {
         }

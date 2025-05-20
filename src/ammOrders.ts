@@ -429,7 +429,7 @@ export class AMMOrders {
                 }
             },
             {
-                name: '--------------------',
+                name: '------- Pool Operations -------------',
                 fields: {},
                 makeMessage: async (values, multisigAddress : Address) => {
                     return {
@@ -456,10 +456,30 @@ export class AMMOrders {
                 }
             },
             {
+                name: 'Change Pool Admin',
+                  description: "<font color='red'>" +
+                    "This action is executed from admin and changes it to new value <br/>\n" + 
+                    "To undo this action you would need the control over the new admin address or redeploy pool from router::admin"+
+                    "</font>",
+                fields: {
+                    pool:   {name: 'Pool Address' , type: 'Address'},
+                    admin:  {name: 'Admin Address', type: 'Address'},
+                    amount: {name: 'TON Amount'   , type: 'TON'},
+                },
+                makeMessage: async (values, multisigAddress : Address) => {
+                    const msg_body = PoolV3Contract.reinitMessage({admin : values.admin.address})
+                    return {
+                        toAddress: values.pool,
+                        tonAmount: values.amount,
+                        body: msg_body
+                    }
+                }
+            },
+            {
                 name: 'Pool Hard Lock (Change admin to Blackhole)',
                 description: "<font color='red'>" +
                     "This action is executed from admin and changes it to Blackhole <br/>\n" + 
-                    "To undo this action you would need to redeploy pool form router::admin"+
+                    "To undo this action you would need to redeploy pool from router::admin"+
                     "</font>",
                 fields: {
                     pool:       {name: 'Pool Address'      , type: 'Address'},
