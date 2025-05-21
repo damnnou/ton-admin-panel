@@ -580,12 +580,16 @@ const validateValue = (fieldName: string, value: string, fieldType: FieldType): 
         }
     }
 
-    const parsePositiveBigInt = (inputAmount: string): ValidatedValue => {
+    const parsePositiveBigInt = (inputAmount: string, allowZero : boolean = false): ValidatedValue => {
         try {
             const units = BigInt(inputAmount);
 
-            if (units <= 0) {
+            if (units < 0) {
                 return makeError('Enter positive amount');
+            }
+
+            if (!allowZero && (units == 0n)) {
+                return makeError('Enter non zero');
             }
 
             return makeValue(units);
@@ -593,6 +597,8 @@ const validateValue = (fieldName: string, value: string, fieldType: FieldType): 
             return makeError('Invalid amount');
         }
     }
+
+    
 
     const parseAmount = (inputAmount: string, decimals: number): ValidatedValue => {
         try {
@@ -625,7 +631,11 @@ const validateValue = (fieldName: string, value: string, fieldType: FieldType): 
             return parsePositiveBigInt(value);
 
         case 'PositiveBigInt':
-            return parsePositiveBigInt(value);
+            return parsePositiveBigInt(value, false);
+
+        case 'NaturalBigInt':
+            return parsePositiveBigInt(value, true);
+
 
         case 'BigInt':
             return parseBigInt(value);

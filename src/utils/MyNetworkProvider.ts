@@ -57,10 +57,11 @@ export const sendToTonApi = async (method: string, params: any, isTestnet: boole
 export async function getAccountState(contractAddress: Address, isTestnet : boolean) : Promise<AccountStorage>
 {
     let endpoint = await getHttpV4Endpoint({ network: isTestnet ? "testnet" : "mainnet"})
+    endpoint = "https://ton.access.orbs.network/55023c0ff5Bd3F8B62C092Ab4D238bEE463E5502/1/testnet/ton-api-v4"
     let client =  new TonClient4({ endpoint })
     
-    let seqno = (await client.getLastBlock()).last.seqno;
-    let state = await client.getAccount(seqno, contractAddress );
+    let bseqno = (await client.getLastBlock()).last.seqno;
+    let state = await client.getAccount(bseqno, contractAddress );
 
     let result : AccountState 
     if (state.account.state.type == "uninit") {

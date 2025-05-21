@@ -8,7 +8,7 @@ export const AMOUNT_TO_SEND = toNano('0.2'); // 0.2 TON
 export const DEFAULT_AMOUNT = toNano('0.1'); // 0.1 TON
 export const DEFAULT_INTERNAL_AMOUNT = toNano('0.05'); // 0.05 TON
 
-export type FieldType = 'TON' | 'Jetton' | 'Address' | 'URL' | 'Status' | 'String' | 'BigInt' | 'PositiveBigInt';
+export type FieldType = 'TON' | 'Jetton' | 'Address' | 'URL' | 'Status' | 'String' | 'BigInt' | 'PositiveBigInt' | 'NaturalBigInt';
 
 export interface ValidatedValue {
     value?: any

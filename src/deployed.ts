@@ -21,20 +21,16 @@ export function getJettonList (isTestnet : boolean) {
 }
 
 export const jettonListTestnet = [
-    /* That is a hack */
-    
+    /* That is a hack */    
+    {
+      "name": "Router: 🌧⛹🎉🐮 (Testnet Deploy 29.04.2025)",
+      "minter": "EQDnfaddnk62TvUw4_-QCG_N1lcJdQZZmAxNnFhJ-Hitoft_"
+    },
+
     {
       "name": "Router: 🫳🅿👡✳ (Testnet Emergency Deploy 18.11.2024)",
       "minter": "0QDnfag9lHlc0rS6YeI7WwRq-3ltcKSsYxLiXmveB7gNU9UB"
-    },
-    {
-      "name": "Router: 🪡↘🤫📀 (Testnet Deploy before first mainnet 11.11.2024)",
-      "minter": "EQCf_TONCABqy-1bGwkmDiRRZZ3Qdxov6Tuog5QjE0nV3i5g"
-    },  
-    {
-      "name": "Router: 🕹♌️🤱🌡 (New Testnet Deploy 08.11.2024)",
-      "minter": "EQDA-TONcOp2IIqfpkGnL2fInc-Cm-ZCS5uy_EF_B3etN1Uv"
-    },  
+    },   
     {
         "name": "pTon",
         "minter": getPTonMinterAddress(true).toString()
@@ -51,6 +47,14 @@ export const jettonListTestnet = [
       "name": "☠️⚒️NULL⚒️☠️",
       "minter": "addr_none()"
     },    
+    {
+       "name" : "Main Testnet KKK multisig",
+       "minter": "kQBKKK_fh1A_me7QaR87wYR4yqDuYE_JgIR5Sw4O9Al2G1jl"
+    },
+    {
+       "name" : "Main Testnet TTT multisig",            
+       "minter": "kQDTTT_QuiE5oJNS4zafeELGeLqAK6lPI5WHCRFq4Q85_2rP"
+    },
     {
       "name": "ALG_USD",
       "minter": "EQD8Hzc0JD808OAnCsnCea2_Fq4cNAiAhGo5KaXM-zt8HV5Q"

@@ -5,13 +5,13 @@ import { ContractOpcodes } from "./amm/opCodes";
 import { packJettonOnchainMetadata, unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 
 import { ContractDict } from "./contracts"
-import { Address, beginCell, Cell, contractAddress, ExternalAddress, fromNano, MessageRelaxed, Slice, StateInit, toNano } from "@ton/core";
+import { Address, beginCell, Cell, contractAddress, ExternalAddress, fromNano, MessageRelaxed, StateInit } from "@ton/core";
 import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
 import { encodePriceSqrt, FEE_DENOMINATOR, getApproxFloatPrice, TickMath } from "./amm/frontmath/frontMath"
 import { BLACK_HOLE_ADDRESS, nftContentToPack, PoolV3Contract, poolv3StateInitConfig } from "./amm/PoolV3Contract"
-import { PoolFactoryContract, PoolFactoryContractConfig, poolFactoryContractConfigToCell } from "./amm/PoolFactoryContract"
+import { PoolFactoryContractConfig, poolFactoryContractConfigToCell } from "./amm/PoolFactoryContract"
 
 import { getJettonMetadata } from "./jettonCache"
 import { formatAddressAndUrl } from "./utils/utils"
@@ -23,7 +23,6 @@ import { setDeployedJson } from "./index"
 import { getJettonList, getPTonMinterAddress } from "./deployed";
 
 import { getEmojiHash } from "./utils/visualHash"
-import { JettonWallet } from "./jetton/JettonWallet";
 import BigNumber from "bignumber.js";
 
 
@@ -51,14 +50,15 @@ export class AMMOrders {
     {
         return [
             {
-                name: `Deploy Router v=${ContractDict.emojiHash}`,
+                name: `Deploy Router v=${ContractDict.emojiHash} (compiled ${ContractDict.date})`,
                 fields: {
                     amountTW: { name: 'TON for pTon Wallet Deploy', type: 'TON', default : '0.05' },
                     amountRD: { name: 'TON Amount for Router'     , type: 'TON', default : '0.085' },
-                    poolAdmin:   { name: 'Pool Admin Contract'    , type: 'Address'},                    
-                    poolFactory: { name: 'Pool Factory Contract'  , type: 'Address'},    
-                    timelockDelay : { name: 'Time Lock Delay', type: 'PositiveBigInt', default: (1n * 24n * 60n * 60n ).toString() },
-                    nonce : { name: 'Nonce', type: 'PositiveBigInt' }
+                    poolAdmin:   { name: 'Pool Admin Contract'    , type: 'Address' },                    
+                    poolFactory: { name: 'Pool Factory Contract'  , type: 'Address', default : BLACK_HOLE_ADDRESS.toString()},    
+                    timelockDelay : { name: 'Time Lock Delay', type: 'PositiveBigInt', default: IS_TESTNET ? (5n * 60n).toString() : (1n * 24n * 60n * 60n).toString() },
+                    flags : { name: 'Flags', type: 'NaturalBigInt', default: '1' },
+                    nonce : { name: 'Nonce', type: 'NaturalBigInt' }
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
                     let buffer;
@@ -79,7 +79,7 @@ export class AMMOrders {
                         adminAddress : multisigAddress,
                         poolAdminAddress   : values.poolAdmin.address,
                         poolFactoryAddress : values.poolFactory.address,
-                        flags : 0x0n, 
+                        flags : values.flags, 
                         timelockDelay : values.timelockDelay,                 
                         poolv3_code : poolCell,    
                         accountv3_code : accountCell,
