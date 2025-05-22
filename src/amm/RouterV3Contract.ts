@@ -398,6 +398,7 @@ export class RouterV3Contract implements Contract {
         newThrottlingRate? : number,
         newLastHour? : number
     } ) : Cell {
+        console.log(opts)
         return beginCell()
             .storeUint(ContractOpcodes.ROUTERV3_CHANGE_PARAMS, 32) // OP code
             .storeUint(0, 64) // QueryID what for?           

@@ -200,6 +200,10 @@ export const jettonListTestnet = [
       "minter": BLACK_HOLE_ADDRESS1.toString()
     },
     {
+      "name": "☠️⚒️NULL⚒️☠️",
+      "minter": "addr_none()"
+    }, 
+    {
         "name": "pTon",
         "minter": getPTonMinterAddress(false).toString()
     }, 

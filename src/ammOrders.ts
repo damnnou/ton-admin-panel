@@ -249,15 +249,19 @@ export class AMMOrders {
 
                 },
                 makeMessage: async (values, multisigAddress : Address) => {
+
+                    const options = {                        
+                            newPoolAdmin : values.newPoolAdmin.address ? values.newPoolAdmin.address : undefined  ,
+                            newPoolFactory : values.newPoolFactory.address ? values.newPoolFactory.address : undefined ,
+                            newThrottlingRate : values.throttlingRate < 0 ? undefined : values.throttlingRate,
+                            newLastHour :  values.lastKnownHour < 0 ? undefined : values.lastKnownHour            
+                        }
+                    console.log(options)
+
                     return {
                         toAddress: {address: values.router.address, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
-                        body: RouterV3Contract.changeRouterParamMessage({                        
-                            newPoolAdmin : values.newPoolAdmin.address ? undefined : values.newPoolAdmin.address,
-                            newPoolFactory : values.newPoolFactory.address ? undefined : values.newPoolFactory.address,
-                            newThrottlingRate : values.throttlingRate < 0 ? undefined : values.throttlingRate,
-                            newLastHour :  values.lastKnownHour < 0 ? undefined : values.lastKnownHour            
-                        })
+                        body: RouterV3Contract.changeRouterParamMessage(options)
                     };
                 }
             },       
