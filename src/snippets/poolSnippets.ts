@@ -1,5 +1,5 @@
 import { Address } from "@ton/core"
-import { BLACK_HOLE_ADDRESS, nftContentToPack, PoolV3Contract, poolv3StateInitConfig } from "../amm/PoolV3Contract"
+import { PoolV3Contract } from "../amm/PoolV3Contract"
 import { MyNetworkProvider } from "../utils/MyNetworkProvider"
 import BigNumber from "bignumber.js"
 import { getJettonMetadata } from "../jettonCache"

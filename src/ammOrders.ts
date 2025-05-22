@@ -10,7 +10,7 @@ import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
 import { encodePriceSqrt, FEE_DENOMINATOR, getApproxFloatPrice, TickMath } from "./amm/frontmath/frontMath"
-import { BLACK_HOLE_ADDRESS, nftContentToPack, PoolV3Contract, poolv3StateInitConfig } from "./amm/PoolV3Contract"
+import {  PoolV3Contract, poolv3StateInitConfig } from "./amm/PoolV3Contract"
 import { PoolFactoryContractConfig, poolFactoryContractConfigToCell } from "./amm/PoolFactoryContract"
 
 import { getJettonMetadata } from "./jettonCache"
@@ -24,6 +24,7 @@ import { getJettonList, getPTonMinterAddress } from "./deployed";
 
 import { getEmojiHash } from "./utils/visualHash"
 import BigNumber from "bignumber.js";
+import { BLACK_HOLE_ADDRESS } from "./amm/tonUtils";
 
 
 function xorBuffers(buffers: Buffer[]): Buffer {
@@ -582,7 +583,7 @@ export class AMMOrders {
                 }
             },
             {
-                name: 'Change NFT Content',
+                name: 'Change NFT Collection Content',
                 fields: {
                     pool:   { name: 'Pool Address', type: 'Address' },                
                     amount: { name: 'TON Amount', type: 'TON' },
@@ -622,7 +623,7 @@ export class AMMOrders {
                 }
             },
             {
-                name: 'Change NFT Item',
+                name: 'Change NFT Item Content',
                 fields: {
                     pool:   { name: 'Pool Address', type: 'Address' },                
                     amount: { name: 'TON Amount', type: 'TON' },
@@ -741,6 +742,10 @@ export class AMMOrders {
             const provider0 = new MyNetworkProvider(pTonMinterAddress, isTestnet)
             const pTonRouterWalletAddress = await  pTonMinter.getWalletAddress(provider0, routerAddress)
 
+            const totalHash = xorBuffers([routerCodeCell.hash(0), config.poolv3_code.hash(0), config.accountv3_code.hash(0), config.position_nftv3_code.hash(0)])
+            let shortHash = BigInt("0x" + totalHash.toString('hex')) % (2n ** 42n)
+            const emojiHash = getEmojiHash(shortHash)
+
             const addressList = {
                 router : routerAddress.toString(),   
                 pTon : {
@@ -755,14 +760,20 @@ export class AMMOrders {
     
                     pTonMinter  : ContractDict["pTonMinter"],
                     pTonWallet  : ContractDict["pTonWallet"],           
+                }, 
+                code_hashes : {
+                    router      : routerCodeCell             .hash().toString("hex"),
+                    pool        : config.poolv3_code         .hash().toString("hex"),
+                    account     : config.accountv3_code      .hash().toString("hex"),
+                    positionnft : config.position_nftv3_code .hash().toString("hex"),
+                    
+                    emojiHash  : emojiHash
                 }              
             }
     
-            setDeployedJson(JSON.stringify(addressList))
+            setDeployedJson(JSON.stringify(addressList, null, 2))
 
-            const totalHash = xorBuffers([routerCodeCell.hash(0), config.poolv3_code.hash(0), config.accountv3_code.hash(0), config.position_nftv3_code.hash(0)])
-            let shortHash = BigInt("0x" + totalHash.toString('hex')) % (2n ** 42n)
-            const emojiHash = getEmojiHash(shortHash)
+
             return  `Spend ${value} TON <br/>` +            
                 `Deploy contract to ${targetAddrS} <br>` + 
                 `Admin:  ${adminAddrS} <br>` + 
@@ -837,8 +848,11 @@ export class AMMOrders {
         }
 
         try {
+            console.log("Checking for the deploy/reinit message")
             let p = RouterV3Contract.unpackDeployPoolMessage(cell)
     
+            console.log("Unpacked message into", p)
+            
             const jetton0MinterS = await formatAddressAndUrl(p.jetton0Minter, isTestnet)
             const jetton1MinterS = await formatAddressAndUrl(p.jetton1Minter, isTestnet)
     
@@ -847,6 +861,7 @@ export class AMMOrders {
     
     
             const controllerS = await formatAddressAndUrl(p.controllerAddress, isTestnet)
+            //const adminS      = await formatAddressAndUrl(p.adminAddress, isTestnet)
     
             const metadata0 = await getJettonMetadata(p.jetton0Minter, isTestnet)
             const metadata1 = await getJettonMetadata(p.jetton1Minter, isTestnet)
@@ -870,9 +885,18 @@ export class AMMOrders {
             )
 
             const poolContract = PoolV3Contract.createFromConfig(config, Cell.fromBoc(Buffer.from(ContractDict.PoolV3Contract, "base64"))[0])
+            const poolContractAddressS =  await formatAddressAndUrl(poolContract.address, isTestnet)
+
+            /* get router predition */
+            let predictedPoolAddressS : string = "Can't fetch" 
+            try {
+                const router = new RouterV3Contract(msg.info.dest as Address) 
+                const provider = new MyNetworkProvider(router.address, isTestnet)                                
+                const predictedPoolAddress = await router.getPoolAddress(provider, p.jetton0WalletAddr, p.jetton1WalletAddr)
+                predictedPoolAddressS =  await formatAddressAndUrl(predictedPoolAddress, isTestnet)
+            } catch {}
  
             /* !!! We should check for injection in user data */
-
             let priceValue = getApproxFloatPrice(p.sqrtPriceX96) * (10 ** Number(logicalDecimals0)) / (10 ** Number(logicalDecimals1))
             let priceText = `1${logicalJetton0Name} =  ${priceValue}${logicalJetton1Name}`
 
@@ -882,6 +906,8 @@ export class AMMOrders {
             let protocolFee = p.currentFee * p.protocolFee / (FEE_DENOMINATOR * FEE_DENOMINATOR) * 100
 
             return `Create New Pool For<br/>` + 
+            `  <b>Pool Address Guess:</b> ${poolContractAddressS} <br/>` +
+            `  <b>Pool Address From Router</b> ${predictedPoolAddressS} <br/>` +
             `  <b>Minter1:</b> ${jetton0MinterS} &nbsp;<span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]} [d:${metadata0["decimals"]}]</span><br/>` + 
             `  <b>Wallet1:</b> ${jetton0WalletS}<br/>` + 
             `  <br/>` +
@@ -892,6 +918,7 @@ export class AMMOrders {
             `  Price : ${p.sqrtPriceX96} ( ${priceText} ) <br/>` +
     
             `  Controller :  ${controllerS}<br/>` +           
+            //`  Admin :  ${adminS}<br/>` +
 
             `<table>` +
             `<tr><td>Active fee   <td/> ${p.currentFee}  <td/> | <td/>${activeFee}   % <td/></tr>` + 
@@ -958,6 +985,7 @@ export class AMMOrders {
             `  <li>Pool Price  : ${p.sqrtPriceX96 == undefined ? "unchanged" : ("" + p.sqrtPriceX96.toString() + "  (" + priceInfo + ")" )} </li> ` +
             `  <li>Pool Controller : ${p.controller == undefined ? "unchanged" : p.controller } </li> ` +
             `  <li>Pool Admin      : ${p.admin      == undefined ? "unchanged" : p.admin      } </li> ` +
+            `  <li>Pool Arbiter    : ${p.arbiter    == undefined ? "unchanged" : p.arbiter    } </li> ` +            
             `  <li>Pool Collection Metadata : ${p.nftContentPacked == undefined ? "unchanged" : "CHANGED:" +  (this.renderNFTContent(unpackedCollection))} </li> ` +
             `  <li>NFT Item Metadata : ${p.nftItemContentPacked == undefined ? "unchanged" : "CHANGED:" + unpackedItem.toString() } </li> ` +            
             `</ol>` 

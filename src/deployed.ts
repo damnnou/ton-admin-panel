@@ -1,6 +1,5 @@
 import { Address } from "@ton/core"
-import { BLACK_HOLE_ADDRESS, BLACK_HOLE_ADDRESS1 } from "./amm/PoolV3Contract"
-
+import { BLACK_HOLE_ADDRESS, BLACK_HOLE_ADDRESS1 }  from "./amm/tonUtils"
 
 export function getPTonMinterAddress (isTestnet : boolean) {
     if (isTestnet) {
@@ -174,16 +173,20 @@ export const jettonListTestnet = [
 
 
   export const jettonListMainnet = [ 
-    
+     {
+      "name": "Router: 🚋🦚👓🧤 (Mainnet Deploy 21.05.2025)",
+      "minter": "EQC_-u2KQb-VqwIHckEc0r3dHbIpT8zgxXu-avRuJOFVz-4r"
+    },
     {
       "name": "Router: 💻🖱👿🥣 (Mainnet Deploy 19.11.2024)",
       "minter": "EQC_-t0nCnOFMdp7E7qPxAOCbCWGFz-e3pwxb6tTvFmshjt5"
     },
-
+/*
     {
       "name": "Router: 🪡↘🤫📀 (Mainnet Deploy 12.11.2024)",
       "minter": "UQBu-T0NcoSfIveS6nXpsshKxBRTZKB83XW-gIunhQwDnKa0"
     }, 
+*/    
     {
       "name": "REX Multisig",
       "minter": "EQCREXe_J-1_zQHRQxYKzRu8MUUlBve4k_TFdJVEnhIULVwV"

@@ -1,9 +1,10 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode, Slice } from "@ton/core";
 import { ContractErrors, ContractOpcodes, OpcodesLookup } from "./opCodes";
-import { BLACK_HOLE_ADDRESS, nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract";
+import { nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract";
 import { FEE_DENOMINATOR, IMPOSSIBLE_FEE, MaxUint256 } from "./frontmath/frontMath";
 import { ContractMessageMeta, MetaMessage, StructureVisitor } from "./meta/structureVisitor";
 import { ParseDataVisitor } from "./meta/parseDataVisitor";
+import { BLACK_HOLE_ADDRESS } from "./tonUtils";
 
 /** Initial data structures and settings **/
 export const TIMELOCK_DELAY_DEFAULT : bigint = 5n * 60n;

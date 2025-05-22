@@ -1,25 +1,36 @@
-import { Address, beginCell, Cell,  Dictionary, DictionaryValue, Contract, contractAddress,  ContractProvider, Sender, SendMode, TupleReader } from "@ton/core";
+import { Address, beginCell, Cell,  Dictionary, DictionaryValue, Contract, contractAddress,  ContractProvider, Sender, SendMode, TupleReader, Slice } from "@ton/core";
 import { ContractOpcodes, OpcodesLookup } from "./opCodes";
 import { packJettonOnchainMetadata} from "./common/jettonContent";
 import { FEE_DENOMINATOR, IMPOSSIBLE_FEE } from "./frontmath/frontMath";
-import { ContractMessageMeta } from "./meta/structureVisitor";
+import { ContractMessageMeta, MetaMessage, StructureVisitor } from "./meta/structureVisitor";
+import { ParseDataVisitor } from "./meta/parseDataVisitor";
+import { BLACK_HOLE_ADDRESS } from "./tonUtils";
   
+export type TickInfoWrapper = { 
+    liquidityGross : bigint,
+    liquidityNet : bigint,
+    outerFeeGrowth0Token : bigint,
+    outerFeeGrowth1Token : bigint
+};
+
+export type NumberedTickInfo = TickInfoWrapper & { tickNum : number }
 
 
-export const BLACK_HOLE_ADDRESS  : Address = Address.parse("EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c")
-export const BLACK_HOLE_ADDRESS1 : Address = Address.parse("EQAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEOSs")
-export const BLACK_HOLE_ADDRESS2 : Address = Address.parse("EQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAc3j")
-
-/** Inital data structures and settings **/
+/** Initial data structures and settings **/
 export type PoolV3ContractConfig = {    
     router_address : Address;
     admin_address? : Address;
+    controller_address? : Address;
+    arbiter_address? : Address | null;
 
     lp_fee_base?  : number;
     protocol_fee? : number;
 
     jetton0_wallet : Address;
     jetton1_wallet : Address;
+
+    jetton0_minter? : Address;
+    jetton1_minter? : Address;
 
     tick_spacing?   : number;
     
@@ -29,36 +40,41 @@ export type PoolV3ContractConfig = {
     liquidity?      : bigint;
     lp_fee_current? : number;
 
+    ticks? : Cell | NumberedTickInfo[];
+
     accountv3_code : Cell;
     position_nftv3_code : Cell;   
 
     nftContent? : Cell;
     nftItemContent? : Cell;
+
+    ticks_occupied? : number;
+    nftv3item_counter?  : bigint;
+    nftv3items_active?  : bigint;
+
+    feeGrowthGlobal0X128? : bigint;  
+    feeGrowthGlobal1X128? : bigint;  
+    collectedProtocolFee0? : bigint;
+    collectedProtocolFee1? : bigint;  
+
+    reserve0? : bigint;
+    reserve1? : bigint;
 };
 
-export class TickInfoWrapper { 
-    constructor(
-        public liquidityGross : bigint = 0n,
-        public liquidityNet : bigint = 0n,
-        public outerFeeGrowth0Token : bigint = 0n,
-        public outerFeeGrowth1Token : bigint = 0n
-    )
-    {}
-};
-
-const DictionaryTickInfo: DictionaryValue<TickInfoWrapper> = {
+export const DictionaryTickInfo: DictionaryValue<TickInfoWrapper> = {
     serialize(src, builder) {
         builder.storeUint(src.liquidityGross, 256);
         builder.storeInt (src.liquidityNet, 128);
-        builder.storeUint(src.outerFeeGrowth0Token, 256);
-        builder.storeUint(src.outerFeeGrowth1Token, 256);        
+        builder.storeInt (src.outerFeeGrowth0Token, 256);
+        builder.storeInt (src.outerFeeGrowth1Token, 256);        
     },
     parse(src) {
-      let tickInfo = new TickInfoWrapper();
-      tickInfo.liquidityGross = src.loadUintBig(256);
-      tickInfo.liquidityNet   = src.loadIntBig(128);
-      tickInfo.outerFeeGrowth0Token = src.loadUintBig(256);
-      tickInfo.outerFeeGrowth1Token = src.loadUintBig(256);      
+      let tickInfo = {
+            liquidityGross : src.loadUintBig(256),
+            liquidityNet   : src.loadIntBig(128),
+            outerFeeGrowth0Token : src.loadIntBig(256),
+            outerFeeGrowth1Token : src.loadIntBig(256)
+      }
       return tickInfo;
     }
 }
@@ -135,8 +151,19 @@ export function poolv3StateInitConfig(
 
 
 export function poolv3ContractConfigToCell(config: PoolV3ContractConfig): Cell {
-    let ticks = Dictionary.empty(Dictionary.Keys.Int(24), DictionaryTickInfo);
   
+    let ticksDict = Dictionary.empty(Dictionary.Keys.Int(24), DictionaryTickInfo);
+    let ticksCell = beginCell().storeDict(ticksDict).endCell()
+
+    if (config.ticks instanceof Cell) {
+        ticksCell = config.ticks
+    } 
+    if (Array.isArray(config.ticks)) {
+        for (let tickInfo of config.ticks) {
+            ticksDict.set(tickInfo.tickNum, tickInfo)
+        }
+        ticksCell = beginCell().storeDict(ticksDict).endCell()
+    }
   
     return beginCell()
         .storeAddress(config.router_address)
@@ -149,35 +176,33 @@ export function poolv3ContractConfigToCell(config: PoolV3ContractConfig): Cell {
         .storeUint   (0, 64)   // poolv3::seqno
 
         .storeRef( beginCell()
-            .storeUint(0n, 256) // poolv3::feeGrowthGlobal0X128  
-            .storeUint(0n, 256) // poolv3::feeGrowthGlobal1X128  
-            .storeUint(0n, 128) // poolv3::collectedProtocolFee0
-            .storeUint(0n, 128) // poolv3::collectedProtocolFee1  
+            .storeUint(config.feeGrowthGlobal0X128 ?? 0n, 256) // poolv3::feeGrowthGlobal0X128  
+            .storeUint(config.feeGrowthGlobal1X128 ?? 0n, 256) // poolv3::feeGrowthGlobal1X128  
+            .storeUint(config.collectedProtocolFee0 ?? 0n, 128) // poolv3::collectedProtocolFee0
+            .storeUint(config.collectedProtocolFee1 ?? 0n, 128) // poolv3::collectedProtocolFee1  
 
-            .storeCoins(0n) // poolv3::reserve0
-            .storeCoins(0n) // poolv3::reserve1
+            .storeCoins(config.reserve0 ?? 0n) // poolv3::reserve0
+            .storeCoins(config.reserve1 ?? 0n) // poolv3::reserve1
         .endCell())
         .storeRef( beginCell()
-            .storeUint( 0 ,   1) 
+            .storeUint(config.pool_active ? 1 : 0,    1) 
             .storeInt (config.tick           ??  0,  24) 
             .storeUint(config.price_sqrt     ??  0, 160)
             .storeUint(config.liquidity      ??  0, 128) 
-            .storeUint (0, 24)  // Occupied ticks
+            .storeUint (config.ticks_occupied ?? 0, 24)  // Occupied ticks
 
-            .storeUint (0, 64)  // NFT Inital counter
-            .storeUint (0, 64)  // NFT Active counter
+            .storeUint (config.nftv3item_counter ?? 0, 64)  // NFT Inital counter
+            .storeUint (config.nftv3items_active ?? 0, 64)  // NFT Active counter
 
             .storeAddress(config.admin_address ?? BLACK_HOLE_ADDRESS) 
-            .storeAddress(BLACK_HOLE_ADDRESS) // poolv3::controller_address
+            .storeAddress(config.controller_address  ?? BLACK_HOLE_ADDRESS) // poolv3::controller_address
             .storeRef( beginCell()
-                .storeAddress(BLACK_HOLE_ADDRESS) // poolv3::jetton0_minter
-                .storeAddress(BLACK_HOLE_ADDRESS) // poolv3::jetton1_minter
+                .storeAddress(config.jetton0_minter  ?? BLACK_HOLE_ADDRESS) // poolv3::jetton0_minter
+                .storeAddress(config.jetton1_minter  ?? BLACK_HOLE_ADDRESS) // poolv3::jetton1_minter
+		        .storeAddress(config.arbiter_address ?? BLACK_HOLE_ADDRESS) 
             .endCell())
-          
         .endCell())      
-        .storeRef( beginCell()
-            .storeDict(ticks)         
-        .endCell())
+        .storeRef( ticksCell )
         .storeRef( beginCell()
             .storeRef(config.accountv3_code)
             .storeRef(config.position_nftv3_code)
@@ -188,13 +213,111 @@ export function poolv3ContractConfigToCell(config: PoolV3ContractConfig): Cell {
 }
 
 
-type NumberedTickInfo = { 
-    tickNum : number,
-    liquidityGross : bigint,
-    liquidityNet   : bigint,
-    outerFeeGrowth0Token? : bigint,
-    outerFeeGrowth1Token? : bigint 
+export function poolv3ContractCellToConfig(config: Cell): PoolV3ContractConfig {
+
+    let result : Partial<PoolV3ContractConfig> = {}
+    
+    let ds : Slice = config.beginParse()
+
+    result.router_address = ds.loadAddress()
+    result.lp_fee_base    = ds.loadUint(16)
+    result.protocol_fee   = ds.loadUint(16)
+    result.lp_fee_current = ds.loadUint(16)
+    result.jetton0_wallet = ds.loadAddress()
+    result.jetton1_wallet = ds.loadAddress()
+    result.tick_spacing   = ds.loadUint(24)    
+    let dummy = ds.loadUint(64)
+
+    let feeCell = ds.loadRef()
+    let feeSlice = feeCell.beginParse()
+        result.feeGrowthGlobal0X128  = feeSlice.loadUintBig(256) // poolv3::feeGrowthGlobal0X128  
+        result.feeGrowthGlobal1X128  = feeSlice.loadUintBig(256) // poolv3::feeGrowthGlobal1X128  
+        result.collectedProtocolFee0 = feeSlice.loadUintBig(128) // poolv3::collectedProtocolFee0
+        result.collectedProtocolFee1 = feeSlice.loadUintBig(128) // poolv3::collectedProtocolFee1      
+        result.reserve0 = feeSlice.loadCoins() // poolv3::reserve0
+        result.reserve1 = feeSlice.loadCoins() // poolv3::reserve1
+    
+
+    let stateCell = ds.loadRef()
+    let stateSlice = stateCell.beginParse()
+        result.pool_active = stateSlice.loadBoolean() 
+        result.tick        = stateSlice.loadInt ( 24) 
+        result.price_sqrt  = stateSlice.loadUintBig(160)
+        result.liquidity   = stateSlice.loadUintBig(128) 
+
+        result.ticks_occupied    = stateSlice.loadUint (24)  // Occupied ticks
+        result.nftv3item_counter = stateSlice.loadUintBig (64)  // NFT Inital counter
+        result.nftv3items_active = stateSlice.loadUintBig (64)  // NFT Active counter
+
+        result.admin_address      = stateSlice.loadAddress()
+        result.controller_address = stateSlice.loadAddress() 
+
+        let addressCell  = stateSlice.loadRef()
+        let addressSlice = addressCell.beginParse()
+            const tmp0 = addressSlice.loadAddress()
+            if (addressSlice.remainingBits > 0) {   // V1, V1.5
+                result.jetton0_minter  = tmp0
+            result.jetton1_minter  = addressSlice.loadAddress()
+                if (addressSlice.remainingBits > 0) {
+            result.arbiter_address = addressSlice.loadAddress()
+                }
+            } else {                                // V2  
+                result.arbiter_address = tmp0  
+            }
+
+    result.ticks = ds.loadRef()
+    let subcodesCell = ds.loadRef()
+    let subcodesSlice = subcodesCell.beginParse()  
+        if (subcodesSlice.remainingRefs == 4) {  // V1, V1.5
+        result.accountv3_code      = subcodesSlice.loadRef()
+        result.position_nftv3_code = subcodesSlice.loadRef()
+        result.nftContent          = subcodesSlice.loadRef()
+        result.nftItemContent      = subcodesSlice.loadRef()
+        } else {                                 // V2  
+            let codesCell  = subcodesSlice.loadRef()
+            let codesSlice = codesCell.beginParse()  
+                result.accountv3_code      = codesSlice.loadRef()
+                result.position_nftv3_code = codesSlice.loadRef()
+
+            let nftCell  = subcodesSlice.loadRef()
+            let nftSlice = nftCell.beginParse()  
+                result.nftContent     = nftSlice.loadRef()
+                result.nftItemContent = nftSlice.loadRef()
+
+            let mintersCell  = subcodesSlice.loadRef()
+            let mintersSlice = mintersCell.beginParse()  
+                result.jetton0_minter = mintersSlice.loadAddress()
+                result.jetton1_minter = mintersSlice.loadAddress()
+        }
+
+    return result as PoolV3ContractConfig
 }
+
+
+type DeployOptions = {
+    is_from_admin? : boolean
+    activate_pool? : boolean, 
+
+    jetton0Minter?: Address,
+    jetton1Minter?: Address,
+
+    admin?      : Address,
+    controller? : Address,
+    arbiter?    : Address,
+
+    nftContentPacked? : Cell,
+    nftItemContentPacked? : Cell,
+
+    protocolFee? : number,
+    lpFee      ? : number,
+    currentFee ? : number
+}
+
+type ReinitOptions = DeployOptions & {  
+    tickSpacing? : number,
+    sqrtPriceX96?: bigint,        
+}
+
   
   /** Pool  **/
 export class PoolV3Contract implements Contract {
@@ -231,96 +354,18 @@ export class PoolV3Contract implements Contract {
         return new PoolV3Contract(address, init);
     }
   
-    async sendDeploy(provider: ContractProvider, via: Sender, value: bigint,         
-        tickSpacing : number,
-        sqrtPriceX96: bigint,        
-        opts: {
-            is_from_admin? : boolean
-            activate_pool? : boolean, 
-
-            jetton0Minter?: Address,
-            jetton1Minter?: Address,
-            admin? : Address,
-            controller?: Address,
-
-            nftContentPacked? : Cell,
-            nftItemContentPacked? : Cell,
-
-            protocolFee? : number,
-            lpFee      ? : number,
-            currentFee ? : number
-        }    
+    static createFromDataAndCode(
+        data: Cell,
+        code: Cell,
+        workchain = 0
     ) {
-        if (! opts.activate_pool) {
-            opts.activate_pool = false
+        const init = { code, data };
+        const address = contractAddress(workchain, init);    
+        return new PoolV3Contract(address, init);
         }
-
-        let minterCell = null
-        if (opts.jetton0Minter && opts.jetton0Minter) {
-            minterCell = beginCell()
-                .storeAddress(opts.jetton0Minter)
-                .storeAddress(opts.jetton1Minter)
-           .endCell()
-        }
-
-        if (opts.is_from_admin == undefined) {
-            opts.is_from_admin = true
-        }
-        
-        let body : Cell = beginCell()
-            .storeUint(ContractOpcodes.POOLV3_INIT, 32) // OP code
-            .storeUint(0, 64) // query_id
-            .storeUint((opts.is_from_admin ? 1 : 0) , 1)  // is from admin. 
-            .storeUint(opts.admin ? 1 : 0, 1)
-            .storeAddress(opts.admin)                 // null is an invalid Address, but valid slice
-            .storeUint(opts.controller ? 1 : 0, 1)
-            .storeAddress(opts.controller)
-
-            .storeUint(1, 1)            
-            .storeUint(tickSpacing , 24)
-            .storeUint(1, 1)            
-            .storeUint(sqrtPriceX96, 160)
-            .storeUint(1, 1)
-            .storeUint(opts.activate_pool ? 1 : 0, 1)
-
-            .storeUint(opts.protocolFee ? opts.protocolFee  : IMPOSSIBLE_FEE , 16)
-            .storeUint(opts.lpFee       ? opts.lpFee        : IMPOSSIBLE_FEE , 16)
-            .storeUint(opts.currentFee  ? opts.currentFee   : IMPOSSIBLE_FEE , 16)  
-
-            .storeRef(opts.nftContentPacked     ?? nftContentPackedDefault)
-            .storeRef(opts.nftItemContentPacked ?? nftItemContentPackedDefault)
-            .storeMaybeRef(minterCell)
-        .endCell();
     
-        await provider.internal(via, {
-            value,
-            sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: body,
-        });
-    }
-
-
     static reinitMessage(
-        opts: {
-            is_from_admin? : boolean
-
-            activate_pool? : boolean, 
-            tickSpacing?   : number,
-            sqrtPriceX96?  : bigint,
-    
-
-            jetton0Minter? : Address,
-            jetton1Minter? : Address,
-            admin? : Address,
-            controller?: Address,
-
-            nftContentPacked? : Cell,
-            nftItemContentPacked? : Cell,
-
-            protocolFee?: number,
-            lpFee      ?: number,
-            currentFee ?: number
-        }
+        opts: ReinitOptions
     ) : Cell
     {
         if (opts.is_from_admin == undefined) {
@@ -363,24 +408,7 @@ export class PoolV3Contract implements Contract {
         return body
     }
 
-    static unpackReinitMessage( body :Cell) : {
-        is_from_admin? : boolean, 
-        activate_pool? : boolean, 
-        tickSpacing?   : number,
-        sqrtPriceX96?  : bigint,
-
-        jetton0Minter? : Address,
-        jetton1Minter? : Address,
-        admin? : Address,
-        controller?: Address,
-
-        nftContentPacked? : Cell,
-        nftItemContentPacked? : Cell
-
-        protocolFee?: number,
-        lpFee      ?: number,
-        currentFee ?: number
-    }
+    static unpackReinitMessage( body :Cell) : ReinitOptions
     {
         let s = body.beginParse()
         const op       = s.loadUint(32)
@@ -427,28 +455,40 @@ export class PoolV3Contract implements Contract {
 
     }
 
+    async sendDeploy(provider: ContractProvider, via: Sender, value: bigint,         
+        tickSpacing : number,
+        sqrtPriceX96: bigint,        
+        opts: DeployOptions
+    ) {
+        if (! opts.activate_pool) {
+            opts.activate_pool = false
+        }
 
-    async sendReinit(provider: ContractProvider, via: Sender, value: bigint,           
-        opts: {
-            is_from_admin? : boolean, 
+        let minterCell = null
+        if (opts.jetton0Minter && opts.jetton0Minter) {
+            minterCell = beginCell()
+                .storeAddress(opts.jetton0Minter)
+                .storeAddress(opts.jetton1Minter)
+           .endCell()
+        }
 
-            activate_pool? : boolean, 
-            tickSpacing?   : number,
-            sqrtPriceX96?  : bigint,
+        if (opts.is_from_admin == undefined) {
+            opts.is_from_admin = true
+        }
 
-            jetton0Minter? : Address,
-            jetton1Minter? : Address,
-            admin? : Address,
-            controller?: Address,
+        let init : ReinitOptions = {...opts,  tickSpacing, sqrtPriceX96}
 
-            nftContentPacked? : Cell,
-            nftItemContentPacked? : Cell,
-
-            protocolFee?: number,
-            lpFee      ?: number,
-            currentFee ?: number
+        await provider.internal(via, {
+            value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: PoolV3Contract.reinitMessage(init),
+        });
         }
     
+
+
+    async sendReinit(provider: ContractProvider, via: Sender, value: bigint,           
+        opts: ReinitOptions    
     ) {
         await provider.internal(via, { 
             value, 
@@ -571,6 +611,72 @@ export class PoolV3Contract implements Contract {
         await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: PoolV3Contract.messageCollectProtocol() })
     }
      
+    static messageBurn(
+        nftIndex : bigint,
+        tickLower : number,
+        tickUpper : number,
+        liquidity2Burn : bigint,       
+    ) : Cell {
+        let body = beginCell()
+            .storeUint(ContractOpcodes.POOLV3_START_BURN, 32) // OP code
+            .storeUint(0, 64) // query_id                      
+            .storeUint(nftIndex, 64)
+            .storeUint(liquidity2Burn, 128)
+            .storeInt(tickLower, 24)
+            .storeInt(tickUpper, 24)        
+
+        return body.endCell()
+    }
+
+    static unpackBurnMessage(body : Cell) : {
+        nftIndex : bigint,
+        tickLower : number,
+        tickUpper : number,
+        liquidity2Burn : bigint,
+        actions? : {
+            target_address0? : Address | null,
+            target_address1? : Address | null,
+            
+            ton_forward0? : bigint, 
+            forward_payload0? : Cell | null,
+            ton_forward1? : bigint, 
+            forward_payload1? : Cell | null,
+            
+            collectIn? : Address | null;    
+        } 
+    } {
+        let s = body.beginParse()
+        const op       = s.loadUint(32)
+        if (op != ContractOpcodes.POOLV3_START_BURN)
+            throw Error("Wrong opcode")
+        const query_id = s.loadUint(64)
+
+        const nftIndex       = s.loadUintBig( 64)
+        const liquidity2Burn = s.loadUintBig(128)
+        const tickLower      = s.loadInt (24)
+        const tickUpper      = s.loadInt (24)
+
+        let actions 
+
+        const action_cell : Cell | null = s.loadMaybeRef()
+        if  (action_cell) {
+            const action_slice = action_cell.beginParse()
+            const target_address0 = action_slice.loadAddressAny() as (Address | null)
+            const target_address1 = action_slice.loadAddressAny() as (Address | null)
+            const collectIn       = action_slice.loadAddressAny() as (Address | null)
+            
+            const payload_slice = action_slice.loadRef().beginParse()
+
+            const ton_forward0     = payload_slice.loadCoins   ()
+            const forward_payload0 = payload_slice.loadMaybeRef()
+            const ton_forward1     = payload_slice.loadCoins   ()
+            const forward_payload1 = payload_slice.loadMaybeRef()
+
+            actions = {target_address0, target_address1, collectIn, ton_forward0, forward_payload0, ton_forward1, forward_payload1}
+        }
+        return {nftIndex, liquidity2Burn, tickLower, tickUpper, actions}
+
+    }
 
     async sendBurn(
         provider: ContractProvider, 
@@ -583,17 +689,42 @@ export class PoolV3Contract implements Contract {
     ) {
         await provider.internal(via, {
             value: value,
-            body: beginCell()
-                .storeUint(ContractOpcodes.POOLV3_START_BURN, 32) // op
-                .storeUint(0, 64)                                 // query id
-                .storeUint(nftIndex, 64)
-                .storeUint(liquidity2Burn, 128)
-                .storeInt(tickLower, 24)
-                .storeInt(tickUpper, 24)                  
-            .endCell()
+            body: PoolV3Contract.messageBurn(nftIndex, tickLower, tickUpper, liquidity2Burn)
         })
     }
 
+    /** Swap (only can be accepted from router) **/
+    static messageSwapPool(
+        owner : Address,
+        sourceWallet : Address,
+
+        amount : bigint,
+        sqrtPriceLimitX96 : bigint,
+        minOutAmount : bigint,
+
+        target_address? : Address
+    ) : Cell {
+        return beginCell()
+            .storeUint(ContractOpcodes.POOLV3_SWAP, 32) // op
+                .storeUint(0, 64)                                 // query id
+
+            .storeAddress(owner)
+            .storeAddress(sourceWallet)
+            .storeRef(beginCell()
+                .storeCoins(amount)
+                .storeUint(sqrtPriceLimitX96, 160)
+                .storeCoins(minOutAmount)
+            .endCell())
+            
+            .storeRef(beginCell()
+                .storeAddress(target_address ?? null)
+                .storeCoins(0)
+                .storeMaybeRef(null)
+                .storeCoins(0)                
+                .storeMaybeRef(null)
+            .endCell())            
+            .endCell()
+    }
    
     /** Getters **/
    
@@ -651,6 +782,8 @@ export class PoolV3Contract implements Contract {
             ticks_occupied    :  stack.readNumber(),
 
             seqno    :  stack.readBigNumber(),
+
+            arbiter_address  : (stack.remaining > 0) ? stack.readAddress() : null,
         }        
     }
 
@@ -665,27 +798,34 @@ export class PoolV3Contract implements Contract {
      *  
      **/
     
-    async getTickInfo(provider: ContractProvider, tickNumber : number) {
+    async getTickInfo(provider: ContractProvider, tickNumber : number) : Promise<TickInfoWrapper> {
 
         const result = await this.getTickInfosFromArr(provider, tickNumber - 1, 1, false, true)
         if (result.length == 0 || result[0].tickNum != tickNumber)
-            return new TickInfoWrapper()
+            return {
+                liquidityGross       : 0n,
+                liquidityNet         : 0n,
+                outerFeeGrowth0Token : 0n,
+                outerFeeGrowth1Token : 0n
+            }
 
-        let tickInfo = new TickInfoWrapper();
-        tickInfo.liquidityGross       = result[0].liquidityGross;
-        tickInfo.liquidityNet         = result[0].liquidityNet;
-        tickInfo.outerFeeGrowth0Token = result[0].outerFeeGrowth0Token ?? 0n;
-        tickInfo.outerFeeGrowth1Token = result[0].outerFeeGrowth1Token ?? 0n;  
+        let tickInfo : TickInfoWrapper = {
+            liquidityGross       : result[0].liquidityGross,
+            liquidityNet         : result[0].liquidityNet,
+            outerFeeGrowth0Token : result[0].outerFeeGrowth0Token ?? 0n,
+            outerFeeGrowth1Token : result[0].outerFeeGrowth1Token ?? 0n
+        }
         return tickInfo
     }
     
-
-    async getTickInfosAll(provider: ContractProvider) {
-        const { stack } = await provider.get("getAllTickInfos", 
-        []);
-          
-        if (stack.peek().type !== 'cell' ) { return [] }
+    async getTicksCell(provider: ContractProvider) : Promise<Cell> {
+        const { stack } = await provider.get("getAllTickInfos", []);
         let valueReader = stack.readCell();
+        return valueReader
+    }
+
+    async getTickInfosAll(provider: ContractProvider) : Promise<NumberedTickInfo[]> {
+        let valueReader = await this.getTicksCell(provider)
 
         const dict = Dictionary.loadDirect(Dictionary.Keys.Int(24), DictionaryTickInfo, valueReader)
 
@@ -872,6 +1012,184 @@ export class PoolV3Contract implements Contract {
         };
     }
 
+    /**
+     * Visitor pattern for the operations
+     **/
+
+    static metaDescription : MetaMessage[] =     
+    [
+    {
+        opcode : ContractOpcodes.POOLV3_INIT,
+        description : "The first mandatory operation that fills crucial parameters of the pool",
+
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,               type:`Uint`,    size:32,  meta:"op",   comment: ""})    
+            visitor.visitField({ name:`query_id`,         type:`Uint`,    size:64,  meta:""  ,   comment : "queryid as of the TON documentation"}) 
+
+            visitor.visitField({ name:`from_admin`,       type:`Uint`,    size:1 ,  meta:"Bool", comment: "Flag that shows if this message goes from router admin or pool factory"}) 
+
+            visitor.visitField({ name:`has_admin`,        type:`Uint`,    size:1,   meta:"Bool", comment: "Flag that shows if this message have a new admin address"}) 
+            visitor.visitField({ name:`admin_addr`,       type:`Address`, size:267, meta:"" ,    comment: "New address of the admin. If has_admin is false could be 00b"})
+            
+            visitor.visitField({ name:`has_controller`,   type:`Uint`,    size:1,   meta:"Bool", comment: "Flag that shows if this message have a new controller address"}) 
+            visitor.visitField({ name:`controller_addr`,  type:`Address`, size:267, meta:"",     comment: "Address that is allowed to change the fee. Can always be updated by admin. If has_controller is false could be 00b"})
+
+            visitor.visitField({ name:`set_spacing`,      type:`Uint`,    size:1,   meta:"Bool", comment: "Flag that shows if tick_spacing should be set to the pool or ignored"}) 
+            visitor.visitField({ name:`tick_spacing`,     type:`Int`,     size:24,  meta:"",     comment: "Tick spacing to be used in the pool"}) 
+            visitor.visitField({ name:`set_price`,        type:`Uint`,    size:1,   meta:"Bool", comment: "Flag that shows if initial_priceX96 should be set to the pool or ignored"}) 
+            visitor.visitField({ name:`initial_priceX96`, type:`Uint`,    size:160, meta:"PriceX96", comment: "Initial price for the pool"}) 
+            visitor.visitField({ name:`set_active` ,      type:`Uint`,    size:1,   meta:"Bool", comment: "Flag that shows if pool_active should be set to the pool or ignored"}) 
+            visitor.visitField({ name:`pool_active`,      type:`Uint`,    size:1,   meta:"Bool", comment: "Flag is we should start the pool as unlocked"}) 
+            
+            visitor.visitField({ name:`protocol_fee`,     type:`Uint`, size:16, meta:"Fee" , comment: `Liquidity provider fee. base in FEE_DENOMINATOR parts. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
+            visitor.visitField({ name:`lp_fee_base`,      type:`Uint`, size:16, meta:"Fee" , comment: `Protocol fee in FEE_DENOMINATOR. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
+            visitor.visitField({ name:`lp_fee_current`,   type:`Uint`, size:16, meta:"Fee" , comment: `Current value of the pool fee, in case of dynamic adjustment. If value is more than ${FEE_DENOMINATOR} value would be default`})
+
+            visitor.visitField({ name:`nftv3_content`    , type:`Cell`, meta: `Metadata`, size:0, comment: "Metadata for the NFT Collection" })
+            visitor.visitField({ name:`nftv3item_content`, type:`Cell`, meta: `Metadata`, size:0, comment: "Metadata for the NFT Item" })
+
+            /* Maybe ref */
+            visitor.enterCell( { name: "minter_cell",   type:`Maybe`, comment : "Cell With Minters"})
+            visitor.visitField({ name:`jetton0_minter`, type:`Address`, size:267, meta:"", comment: "Address of the jetton0 minter, used by indexer and frontend"})
+            visitor.visitField({ name:`jetton1_minter`, type:`Address`, size:267, meta:"", comment: "Address of the jetton1 minter, used by indexer and frontend"})
+            visitor.leaveCell({})
+        }
+    },
+    {
+        opcode : ContractOpcodes.POOLV3_LOCK,
+        description : "This operation locks the pool. This is allowed to do by the operator and the admin",
+        acceptor : (visitor: StructureVisitor) => 
+        {
+            visitor.visitField({ name:`op`,            type:`Uint` ,   size:32,  meta:"op" , comment : ""})    
+            visitor.visitField({ name:`query_id`,      type:`Uint` ,   size:64,  meta:""   ,comment : "queryid as of the TON documentation"}) 
+        }
+    },
+    {
+        opcode : ContractOpcodes.POOLV3_UNLOCK,
+        description : "This operation locks the pool. This is allowed to do by the operator and the admin",
+        acceptor : (visitor: StructureVisitor) => 
+        {
+            visitor.visitField({ name:`op`,            type:`Uint` ,   size:32,  meta:"op" , comment : ""})    
+            visitor.visitField({ name:`query_id`,      type:`Uint` ,   size:64,  meta:""   ,comment : "queryid as of the TON documentation"}) 
+        }
+    },
+    {
+        opcode : ContractOpcodes.POOLV3_MINT,
+        description : "",    
+        acceptor : (visitor: StructureVisitor) => 
+        {
+            visitor.visitField({ name:`op`,            type:`Uint` ,   size:32,  meta:"op" , comment : ""})    
+            visitor.visitField({ name:`query_id`,      type:`Uint` ,   size:64,  meta:""   ,comment : "queryid as of the TON documentation"}) 
+            visitor.visitField({ name:`amount0Funded`, type:`Coins`,   size:124, meta:""   ,comment : "Amount of jetton 0 received by router for the mint"})
+            visitor.visitField({ name:`amount1Funded`, type:`Coins`,   size:124, meta:""   ,comment : "Amount of jetton 1 recived by router for the mint"})
+            visitor.visitField({ name:`recipient`,     type:`Address`, size:267, meta:""   ,comment : "Address that would receive the minted NFT, excesses and refunds"})
+            visitor.visitField({ name:`liquidity`,     type:`Uint`,    size:128, meta:""   ,comment : "Amount of liquidity to mint"}) 
+            visitor.visitField({ name:`tickLower`,     type:`Int`,     size:24,  meta:""   ,comment : "lower bound of the range in which to mint"})
+            visitor.visitField({ name:`tickUpper`,     type:`Int`,     size:24,  meta:""   ,comment : "upper bound of the range in which to mint"})
+        }
+    },
+    {
+        opcode : ContractOpcodes.POOLV3_BURN,
+        description : "Burn whole or part of nft. Is sent by [Position NFT](position\_nft.md) itself, would only be accepted from the correct NFT itself",
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`             , type:`Uint`    , size:32  , meta : "op", comment : "" })   
+            visitor.visitField({ name:`query_id`       , type:`Uint`    , size:64  , meta : ""  , comment : "queryid as of the TON documentation"})  
+            visitor.visitField({ name:`recipient`      , type:`Address` , size:267 , meta : ""  , comment : "NFT owner to receive funds"})
+            visitor.visitField({ name:`burned_index`   , type:`Uint`    , size:64  , meta : ""  , comment : "Index if the NFT to burn. Should match the sender address"}) 
+            visitor.visitField({ name:`liquidity`      , type:`Uint`    , size:128 , meta : ""  , comment : "NFT liquidity amount prior to burn" })   
+            visitor.visitField({ name:`tickLower`      , type:`Int`     , size:24  , meta : ""  , comment : "Lower tick of the NFT. Sanitized by NFTPosition  contract"}) 
+            visitor.visitField({ name:`tickUpper`      , type:`Int`     , size:24  , meta : ""  , comment : "Upper tick of the NFT. Sanitized by NFTPosition  contract"})    
+            visitor.visitField({ name:`liquidity2Burn` , type:`Uint`    , size:128 , meta : ""  , comment : "Amount of the liquidity to burn, 0 is a valid amount, in this case only collected fees would be returned"})   
+
+            visitor.enterCell({name: "old_fee_cell", comment : "Fee counters to collect from"})
+            visitor.visitField({ name:`feeGrowthInside0LastX128`, type:`Int`, size:256, meta : "x128", comment: "Fee counter inside position range for jetton0, per unit of liquidity, in 128.128 fixed point"}) 
+            visitor.visitField({ name:`feeGrowthInside1LastX128`, type:`Int`, size:256, meta : "x128", comment: "Fee counter inside position range for jetton1, per unit of liquidity, in 128.128 fixed point"})
+            visitor.leaveCell({})
+
+            visitor.enterCell({name: "new_fee_cell", comment : "Fee counters to collect to (Used by indexer)"})
+            visitor.visitField({ name:`feeGrowthInside0CurrentX128`, type:`Int`, size:256, meta : "x128,Indexer", comment: "Fee counter inside position range for jetton0, per unit of liquidity, in 128.128 fixed point" })
+            visitor.visitField({ name:`feeGrowthInside1CurrentX128`, type:`Int`, size:256, meta : "x128,Indexer", comment: "Fee counter inside position range for jetton1, per unit of liquidity, in 128.128 fixed point" })
+            visitor.leaveCell({})
+        }
+    },
+    {
+        opcode : ContractOpcodes.POOLV3_SET_FEE,
+        description : "This operation sets the fee values for the pool. This is allowed to do by the operator and the admin",
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`,             type:`Uint`, size:32, meta:"op" , comment: ""})    
+            visitor.visitField({ name:`query_id`,       type:`Uint`, size:64, meta:""   , comment: "queryid as of the TON documentation"}) 
+            visitor.visitField({ name:`protocol_fee`,   type:`Uint`, size:16, meta:""   , comment: "Liquidity provider fee. base in FEE_DENOMINATOR parts"}) 
+            visitor.visitField({ name:`lp_fee_base`,    type:`Uint`, size:16, meta:""   , comment: "Protocol fee in FEE_DENOMINATOR "}) 
+            visitor.visitField({ name:`lp_fee_current`, type:`Uint`, size:16, meta:""   , comment: "Current value of the pool fee, in case of dynamic adjustment"}) 
+        } 
+    },
+    {
+        opcode : ContractOpcodes.POOLV3_FUND_ACCOUNT,
+        description : "Proxy proof of the jettons funding and mint request to the AccountV3. For more information refer to [AccountV3](account.md)",
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`        , type:`Uint`,    size:32,  meta:"op", comment : "" })  
+            visitor.visitField({ name:`query_id`  , type:`Uint`,    size:64,  meta:"",   comment : "queryid as of the TON documentation"})
+            visitor.visitField({ name:`owner_addr`, type:`Address`, size:267, meta:"",   comment : "Address that would receive the minted NFT, excesses and refunds"})    
+            visitor.visitField({ name:`amount0`   , type:`Coins`,   size:124, meta:"",   comment : "Amount of jetton0 that is funded for the mint"}) 
+            visitor.visitField({ name:`amount1`   , type:`Coins`,   size:124, meta:"",   comment : "Amount of jetton1 that is funded for the mint"}) 
+            visitor.visitField({ name:`enough0`   , type:`Coins`,   size:124, meta:"",   comment : "Minimum amount of jetton0 totally collected on the account that is required to start the mint"}) 
+            visitor.visitField({ name:`enough1`   , type:`Coins`,   size:124, meta:"",   comment : "Minimum amount of jetton1 totally collected on the account that is required to start the mint"}) 
+            visitor.visitField({ name:`liquidity` , type:`Uint`,    size:128, meta:"",   comment : "Amount of liquidity to mint"})
+            visitor.visitField({ name:`tickLower` , type:`Int`,     size:24,  meta:"",   comment : "lower bound of the range in which to mint"}) 
+            visitor.visitField({ name:`tickUpper` , type:`Int`,     size:24,  meta:"",   comment : "upper bound of the range in which to mint"})          
+        }
+    },
+    {
+        opcode : ContractOpcodes.POOLV3_START_BURN,
+        description : "Burn whole or part of nft. Can be called by anyone, but if not called be the owner - would fail later. This operation would compute the amount of the fees that the position is eligible to get and " + 
+                "then forwards a message to the [Position NFT](position\_nft.md) contract",
+        acceptor : (visitor: StructureVisitor) => {
+            visitor.visitField({ name:`op`            , type:`Uint`, size:32,  meta:"op", comment : "" }) 
+            visitor.visitField({ name:`query_id`      , type:`Uint`, size:64,  meta:"",   comment : "queryid as of the TON documentation"})  
+            visitor.visitField({ name:`burned_index`  , type:`Uint`, size:64,  meta:"",   comment : "Index if the NFT to burn"}) 
+            visitor.visitField({ name:`liquidity2Burn`, type:`Uint`, size:128, meta:"",   comment : "Amount of the liquidity to burn, 0 is a valid amount, in this case only collected fees would be returned"})   
+            visitor.visitField({ name:`tickLower`     , type:`Int`,  size:24,  meta:"",   comment : "Lower tick of the NFT. Should match the real one"}) 
+            visitor.visitField({ name:`tickUpper`     , type:`Int`,  size:24,  meta:"",   comment : "Upper tick of the NFT. Should match the real one"})    
+        }
+    },
+    {
+        opcode : ContractOpcodes.POOLV3_SWAP,
+        name : "POOLV3_SWAP",
+        description : "V1.5 Computes the swap math, and issues a command to the router to send funds. Only would be accepted from the router\n" + 
+                "This operation we have several input parameters that would affect the result of the swap\n" + 
+                "| Condition | Swap result | Returned Change | Error Code |\n" + 
+                "|    ---    |    ---      |       ---       | ---        |\n" + 
+                "|  Swap finished sqrtPriceLimitX96 not reached. minOutAmount surpassed  |   total output number of coins  |  0   |  RESULT_SWAP_OK |\n" + 
+                "|  Swap finished minOutAmount not surpassed |  0  |  amount   |  RESULT_SWAP_OUTPUT_TOO_SMALL |\n" + 
+                "|  Swap reached sqrtPriceLimitX96 after changing part1 coins. minOutAmount surpassed |  output number of coins  |  amount - part1  |  RESULT_SWAP_OK |\n" +                 
+                "\n",
+        rights : "This operation is allowed for poolv3::router_address",
+        acceptor : (visitor: StructureVisitor) =>          
+        {       
+            visitor.visitField({ name:`op`      ,          type:`Uint`, size:32,  meta:"op", comment : "" }) 
+            visitor.visitField({ name:`query_id`,          type:`Uint`, size:64,  meta:"",   comment : "queryid as of the TON documentation"})  
+
+            visitor.visitField({ name:`owner_address`,     type:`Address`, size:267, meta:"", comment : "Owner of the liquidity in swap"})
+            visitor.visitField({ name:`zeroForOne`,        type:`Uint`   , size:1  , meta:"Boolean", comment : "used to identify swap direction"})
+
+            visitor.enterCell({ name: "params_cell", comment : "Cell with parameters"})
+            visitor.visitField({ name:`amount`           , type:`Coins`, size:124, meta:"",         comment : "Input amount of the jettons to be swapped"}) 
+            visitor.visitField({ name:`sqrtPriceLimitX96`, type:`Uint`,  size:160, meta:"PriceX96", comment : "Limit marginal price. Swap won't go beyond it."}) 
+            visitor.visitField({ name:`minOutAmount`     , type:`Coins`, size:124, meta:"",        comment : "Minimum amount of the output jettons to get back. If not reached, your input would be returned to you"})
+            visitor.leaveCell({})
+            
+            visitor.enterCell({ name: "payloads_cell",  comment : "Cell with payloads for swap result and change"})
+            visitor.visitField({ name:`target_address`,      type:`Address`, size:267, meta:"",              comment: `Target will receive the result of the swap. Could be addr_none() (*00b*) then owner_address is used`})
+            visitor.visitField({ name:`ok_forward_amount`,   type:`Coins`  , size:124, meta:"",              comment: `Amount of TON to use for forward payload that would be sent with the result of the swap`}) 
+            visitor.visitField({ name:`ok_forward_payload`,  type:`Cell`   , size:0,   meta:"Maybe,Payload", comment: `Payload that would be sent with the jettons of the result of the swap`})
+            visitor.visitField({ name:`ret_forward_amount`,  type:`Coins`  , size:124, meta:""       ,       comment: `Amount of TON to use for forward payload that would be sent with the change for the swap (if any)`})
+            visitor.visitField({ name:`ret_forward_payload`, type:`Cell`   , size:0,   meta:"Maybe,Payload", comment: `Payload that would be sent with the jettons of the change of the swap (if any)`})
+            visitor.leaveCell({})
+        }
+    }
+    ]
+    
+
 
     /** 
     *  Debug methods to parse the message inputs
@@ -881,170 +1199,16 @@ export class PoolV3Contract implements Contract {
     static printParsedInput(body: Cell) : ContractMessageMeta[] 
     {
         let result : ContractMessageMeta[] = []
-
-        const OpLookup : {[key : number] : string} = OpcodesLookup
         let p = body.beginParse()
-        
         let op : number  = p.preloadUint(32)
-        // console.log("op == ", OpLookup[op])
-        p = body.beginParse()
 
-        /*if (op == ContractOpcodes.POOLV3_DEPLOY)
-        {        
-            result.push({ name:`op`,          value: `${p.loadUint(32) }`, type:`Uint(32) op`})    
-            result.push({ name:`query_id`,    value: `${p.loadUint(64) }`, type:`Uint(64) `}) 
-            result.push({ name:`admin_addr`,  value: `${p.loadAddress()}`, type:`Address()`})
-        }*/
-
-        if (op == ContractOpcodes.POOLV3_INIT)
-        {        
-            result.push({ name:`op`,              value: `${p.loadUint(32) }`, type:`Uint(32) op`,   comment: "The first mandatory operation that fills crucial parameters of the pool"})    
-            result.push({ name:`query_id`,        value: `${p.loadUint(64) }`, type:`Uint(64) `  ,   comment : "queryid as of the TON documentation"}) 
-            
-            let has_admin = (p.preloadUint(1) == 1)
-            result.push({ name:`has_admin`,       value: `${p.loadInt (1)  }`, type:`UInt(1) `,      comment: "Flag that shows if this message have a new admin address"}) 
-            if (has_admin) {
-                result.push({ name:`admin_addr`,      value: `${p.loadAddress()}`, type:`Address()`, comment: "New address of the admin. If has_admin is false could be 00b"})
+        for (let meta of this.metaDescription) {
+            if (op == meta.opcode) {
+                let visitor = new ParseDataVisitor
+                visitor.visitCell(body, meta.acceptor)
+                result = [...result, ...visitor.result]
             }
-
-            let has_controller = (p.preloadUint(1) == 1)
-            result.push({ name:`has_controller`,  value: `${p.loadInt (1)  }`, type:`UInt(1) `,      comment: "Flag that shows if this message have a new controller address"}) 
-            if (has_controller) {
-                result.push({ name:`controller_addr`, value: `${p.loadAddress()}`, type:`Address()`, comment: "Address that is allowed to change the fee. Can always be updated by admin. If has_controller is false could be 00b"})
-            }
-
-            result.push({ name:`set_spacing`,     value: `${p.loadInt (1)  }`, type:`UInt(1) `  ,            comment: "Flag that shows if tick_spacing should be set to the pool or ignored"}) 
-            result.push({ name:`tick_spacing`,    value: `${p.loadInt(24)  }`, type:`Int(24)   `,            comment: "Tick spacing to be used in the pool"}) 
-            result.push({ name:`set_price`,       value: `${p.loadInt (1)  }`, type:`UInt(1) `  ,            comment: "Flag that shows if initial_priceX96 should be set to the pool or ignored"}) 
-            result.push({ name:`initial_priceX96`,value: `${p.loadUintBig(160)}`, type:`Uint(160),PriceX96`, comment: "Initial price for the pool"}) 
-            result.push({ name:`set_active` ,     value: `${p.loadInt (1)  }`, type:`UInt(1) `  ,            comment: "Flag that shows if pool_active should be set to the pool or ignored"}) 
-            result.push({ name:`pool_active`,     value: `${p.loadInt (1)  }`, type:`UInt(1) `  ,            comment: "Flag is we should start the pool as unlocked"}) 
-            
-            result.push({ name:`protocol_fee`,  value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Liquidity provider fee. base in FEE_DENOMINATOR parts. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
-            result.push({ name:`lp_fee_base`,   value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Protocol fee in FEE_DENOMINATOR. If value is more than ${FEE_DENOMINATOR} value would be default`}) 
-            result.push({ name:`lp_fee_current`,value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: `Current value of the pool fee, in case of dynamic adjustment. If value is more than ${FEE_DENOMINATOR} value would be default`})
-
-            p.loadRef()
-            result.push({ name:`nftv3_content`     , value: `metadata` , type:`Cell(),Metadata` })
-            p.loadRef()
-            result.push({ name:`nftv3item_content` , value: `metadata` , type:`Cell(),Metadata` })
-
-            result.push({ name:`has_minters`,  value: `${p.loadInt(1)  }`, type:`UInt(1) `       , comment: "Flag that stores if this message has minters" }) 
-            const p1 = p.loadRef().beginParse()
-            
-            result.push({ name:`jetton0_minter`,   value: `${p1.loadAddress()}`, type:`Address()`, comment: "Address of the jetton0 minter, used by indexer and frontend"})
-            result.push({ name:`jetton1_minter`,   value: `${p1.loadAddress()}`, type:`Address()`, comment: "Address of the jetton1 minter, used by indexer and frontend"})
         }
-        if (op == ContractOpcodes.POOLV3_SET_FEE)
-        {
-            result.push({ name:`op`,            value: `${p.loadUint(32) }`, type:`Uint(32) op`, comment: "This operation sets the fee values for the pool. This is allowed to do by the operator and the admin"})    
-            result.push({ name:`query_id`,      value: `${p.loadUint(64) }`, type:`Uint(64) `  , comment: "queryid as of the TON documentation"}) 
-            result.push({ name:`protocol_fee`,  value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: "Liquidity provider fee. base in FEE_DENOMINATOR parts"}) 
-            result.push({ name:`lp_fee_base`,   value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: "Protocol fee in FEE_DENOMINATOR "}) 
-            result.push({ name:`lp_fee_current`,value: `${p.loadUint(16) }`, type:`Uint(16) `  , comment: "Current value of the pool fee, in case of dynamic adjustment"}) 
-        }
-
-        if (op == ContractOpcodes.POOLV3_LOCK)
-        {
-            result.push({ name:`op`,            value: `${p.loadUint(32) }`, type:`Uint(32) op`, comment: "This operation locks the pool. This is allowed to do by the operator and the admin"})    
-            result.push({ name:`query_id`,      value: `${p.loadUint(64) }`, type:`Uint(64) `  , comment: "queryid as of the TON documentation"}) 
-        }
-        
-        if (op == ContractOpcodes.POOLV3_UNLOCK)
-        {
-            result.push({ name:`op`,            value: `${p.loadUint(32) }`, type:`Uint(32) op`, comment: "This operation unlocks the pool. This is allowed to do by the operator and the admin"})    
-            result.push({ name:`query_id`,      value: `${p.loadUint(64) }`, type:`Uint(64) `  , comment: "queryid as of the TON documentation"}) 
-        }
-
-        if (op == ContractOpcodes.POOLV3_MINT)
-        {
-            result.push({ name:`op`,            value: `${p.loadUint(32) }`, type:`Uint(32) op`, comment : ""})    
-            result.push({ name:`query_id`,      value: `${p.loadUint(64) }`, type:`Uint(64) `, comment : "queryid as of the TON documentation"}) 
-            result.push({ name:`amount0Funded`, value: `${p.loadCoins()  }`, type:`Coins()  `, comment : "Amount of jetton 0 received by router for the mint"})
-            result.push({ name:`amount1Funded`, value: `${p.loadCoins()  }`, type:`Coins()  `, comment : "Amount of jetton 1 recived by router for the mint"})
-            result.push({ name:`recipient`,     value: `${p.loadAddress()}`, type:`Address()`, comment : "Address that would receive the minted NFT, excesses and refunds"})
-            result.push({ name:`liquidity`,     value: `${p.loadUint(128)}`, type:`Uint(128)`, comment : "Amount of liquidity to mint"}) 
-            result.push({ name:`tickLower`,     value: `${p.loadInt(24)  }`, type:`Int(24)  `, comment : "lower bound of the range in which to mint"})
-            result.push({ name:`tickUpper`,     value: `${p.loadInt(24)  }`, type:`Int(24)  `, comment : "upper bound of the range in which to mint"})
-        }
-
-        if (op == ContractOpcodes.POOLV3_FUND_ACCOUNT)
-        {          
-            result.push({ name:`op`        , value: `${p.loadUint(32)  }`, type:`Uint(32) op`})  
-            result.push({ name:`query_id`  , value: `${p.loadUint(64) }` , type:`Uint(64)  `, comment : "queryid as of the TON documentation"})
-            result.push({ name:`owner_addr`, value: `${p.loadAddress()}` , type:`Address() `, comment : "Address that would receive the minted NFT, excesses and refunds"})    
-            result.push({ name:`amount0`   , value: `${p.loadCoins()  }` , type:`Coins()   `}) 
-            result.push({ name:`amount1`   , value: `${p.loadCoins()  }` , type:`Coins()   `}) 
-            result.push({ name:`enough0`   , value: `${p.loadCoins()  }` , type:`Coins()   `}) 
-            result.push({ name:`enough1`   , value: `${p.loadCoins()  }` , type:`Coins()   `}) 
-
-            result.push({ name:`liquidity` , value: `${p.loadUint(128)}` , type:`Uint(128) `, comment : "Amount of liquidity to mint"})
-            result.push({ name:`tickLower` , value: `${p.loadInt(24)  }` , type:`Int(24)   `, comment : "lower bound of the range in which to mint"}) 
-            result.push({ name:`tickUpper` , value: `${p.loadInt(24)  }` , type:`Int(24)   `, comment : "upper bound of the range in which to mint"})          
-        }
-
-        if (op == ContractOpcodes.POOLV3_START_BURN)
-        {
-            result.push({ name:`op`             , value: `${p.loadUint(32) }` ,    type:`Uint(32) op`, 
-                comment : "Burn whole or part of nft. Can be called by anyone, but if not called be the owner - would fail later. This operation would compute the amount of the fees that the position is eligible to get and " + 
-                "then forwards a message to the [Position NFT](position\_nft.md) contract" }) 
-
-            result.push({ name:`query_id`       , value: `${p.loadUint(64) }` ,    type:`Uint(64) `  , comment : "queryid as of the TON documentation"})  
-            result.push({ name:`burned_index`   , value: `${p.loadUintBig(64)}` ,  type:`Uint(64) `  , comment : "Index if the NFT to burn"}) 
-            result.push({ name:`liquidity2Burn` , value: `${p.loadUintBig(128)}` , type:`Uint(128)`  , comment : "Amount of the liquidity to burn, 0 is a valid amount, in this case only collected fees would be returned"})   
-            result.push({ name:`tickLower`      , value: `${p.loadInt(24)  }` ,    type:`Int(24)  `  , comment : "Lower tick of the NFT. Should match the real one"}) 
-            result.push({ name:`tickUpper`      , value: `${p.loadInt(24)  }` ,    type:`Int(24)  `  , comment : "Upper tick of the NFT. Should match the real one"})    
-        }
-
-        if (op == ContractOpcodes.POOLV3_BURN)
-        {         
-            result.push({ name:`op`             , value: `${p.loadUint(32)  }`,   type:`Uint(32) op`, comment : "Burn whole or part of nft. Is sent by [Position NFT](position\_nft.md) itself, would only be accepted from the correct NFT itself" })   
-            result.push({ name:`query_id`       , value: `${p.loadUint(64) }` ,   type:`Uint(64) `,  comment : "queryid as of the TON documentation"})  
-            result.push({ name:`recipient`      , value: `${p.loadAddress()}` ,   type:`Address()`, comment : "NFT owner to receive funds"})
-            result.push({ name:`burned_index`   , value: `${p.loadUintBig(64)}` , type:`Uint(64) `, comment : "Index if the NFT to burn. Should match the sender address"}) 
-            result.push({ name:`liquidity`      , value: `${p.loadUintBig(128)}`, type:`Uint(128)`, comment : "NFT liquidity amount prior to burn" })   
-            result.push({ name:`tickLower`      , value: `${p.loadInt(24)  }` ,   type:`Int(24)  `, comment : "Lower tick of the NFT. Sanitized by NFTPosition  contract"}) 
-            result.push({ name:`tickUpper`      , value: `${p.loadInt(24)  }` ,   type:`Int(24)  `, comment : "Upper tick of the NFT. Sanitized by NFTPosition  contract"})    
-            result.push({ name:`liquidity2Burn` , value: `${p.loadUintBig(128)}`, type:`Uint(128)`, comment : "Amount of the liquidity to burn, 0 is a valid amount, in this case only collected fees would be returned"})   
-
-            let p1 = p.loadRef().beginParse()
-            result.push({ name:`feeGrowthInside0LastX128`, value: `${p1.loadUintBig(256)}`, type:`Uint(256)`}) 
-            result.push({ name:`feeGrowthInside1LastX128`, value: `${p1.loadUintBig(256)}`, type:`Uint(256)`})
-
-            let p2 = p.loadRef().beginParse() 
-            result.push({ name:`feeGrowthInside0CurrentX128`   , value: `${p2.loadUintBig(256)}`  , type:`Uint(256),Indexer`})
-            result.push({ name:`feeGrowthInside1CurrentX128`   , value: `${p2.loadUintBig(256)}`  , type:`Uint(256),Indexer`})
-        }
-        if (op == ContractOpcodes.POOLV3_SWAP)
-        {       
-            result.push({ name:`op`               , value: `${p.loadUint(32)}`    , type:`Uint(32) op`, 
-                comment: "Computes the swap math, and issues a command to the router to send funds. Only would be accepted from the router\n" + 
-                "This operation we have several input parameters that would affect the result of the swap\n" + 
-                "| Condition | Swap result | Returned Change | Error Code |\n" + 
-                "|    ---    |    ---      |       ---       | ---        |\n" + 
-                "|  Swap finished sqrtPriceLimitX96 not reached. minOutAmount surpassed  |   total output number of coins  |  0   |  RESULT_SWAP_OK |\n" + 
-                "|  Swap finished minOutAmount not surpassed |  0  |  amount   |  RESULT_SWAP_OUTPUT_TOO_SMALL |\n" + 
-                "|  Swap reached sqrtPriceLimitX96 after changing part1 coins. minOutAmount surpassed |  output number of coins  |  amount - part1  |  RESULT_SWAP_OK |\n" +                 
-                
-                ""})  
-            result.push({ name:`query_id`         , value: `${p.loadUint(64)}`    , type:`Uint(64) `, comment : "queryid as of the TON documentation" })  
-            result.push({ name:`source_wallet`    , value: `${p.loadAddress()}`   , type:`Address()`, comment : "jetton wallet attached to the router"})
-
-            let p1 = p.loadRef().beginParse()
-            result.push({ name:`amount`           , value: `${p1.loadCoins()  }`   , type:`Coins()  `, comment : "Input amount of the jettons to be swapped"}) 
-            result.push({ name:`sqrtPriceLimitX96`, value: `${p1.loadUintBig(160)}`, type:`Uint(160),PriceX96`, comment : "Limit marginal price. Swap won't go beyond it."}) 
-            result.push({ name:`minOutAmount`     , value: `${p1.loadCoins()  }`   , type:`Coins()  `, comment : "Minimum amount of the output jettons to get back. If not reached, your input would be returned to you"})
-            result.push({ name:`from_real_user`   , value: `${p1.loadAddress()}`  , type:`Address() `})
-            result.push({ name:`forward_amount`   , value: `${p.loadCoins()  }`   , type:`Coins()  `, comment : "Amount of ton that would be attached to forward payload"}) 
-            let forwardPayload = p.loadMaybeRef()
-            if (forwardPayload) {
-                result.push({ name:`forward_payload`   , value: forwardPayload.toBoc().toString('hex') , type:`Cell(), Payload` })
-            } else {
-                result.push({ name:`forward_payload`   , value: `none` , type:`Cell()` })
-            }   
-        }
-
         return result;
-
     }
 }
