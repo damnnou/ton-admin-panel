@@ -251,10 +251,10 @@ export class AMMOrders {
                 makeMessage: async (values, multisigAddress : Address) => {
 
                     const options = {                        
-                            newPoolAdmin : values.newPoolAdmin.address ? values.newPoolAdmin.address : undefined  ,
-                            newPoolFactory : values.newPoolFactory.address ? values.newPoolFactory.address : undefined ,
+                            newPoolAdmin      : values.newPoolAdmin.address ? values.newPoolAdmin.address : undefined  ,
+                            newPoolFactory    : values.newPoolFactory.address ? values.newPoolFactory.address : undefined ,
                             newThrottlingRate : values.throttlingRate < 0 ? undefined : values.throttlingRate,
-                            newLastHour :  values.lastKnownHour < 0 ? undefined : values.lastKnownHour            
+                            newLastHour       : values.lastKnownHour < 0 ? undefined : values.lastKnownHour            
                         }
                     console.log(options)
 
@@ -837,7 +837,7 @@ export class AMMOrders {
 
         try {
             let p = RouterV3Contract.unpackChangeRouterParamMessage(cell)
-            const newPoolAdminS   = p.newPoolAdmin ?   await formatAddressAndUrl(p.newPoolFactory, isTestnet) : "unchanged"
+            const newPoolAdminS   = p.newPoolAdmin ?   await formatAddressAndUrl(p.newPoolAdmin, isTestnet) : "unchanged"
             const newPoolFactoryS = p.newPoolFactory ? await formatAddressAndUrl(p.newPoolFactory, isTestnet) : "unchanged"
             
 
