@@ -1002,7 +1002,7 @@ export class AMMOrders {
 
             if (p.nftContentPacked)                
             {
-                if (p.nftContentPacked.hash() == Cell.EMPTY.hash())
+                if (p.nftContentPacked.refs.length == 0 && p.nftContentPacked.bits.length == 0)
                 {
                     result += "NFT Content: Unchanged <br/>"
                 } else {
@@ -1013,7 +1013,7 @@ export class AMMOrders {
 
             if (p.nftItemContentPacked)
             {
-                if (p.nftItemContentPacked.hash() == Cell.EMPTY.hash())
+                if (p.nftItemContentPacked.refs.length == 0 && p.nftItemContentPacked.bits.length == 0)
                 {
                     result += "NFT Item: Unchanged <br/>"
                 } else {
