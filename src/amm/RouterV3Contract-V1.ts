@@ -1,20 +1,19 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode, Slice } from "@ton/core";
-import { ContractOpcodes, OpcodesLookup, ContractErrors } from "./opCodes";
-import { nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract";
-import { FEE_DENOMINATOR, IMPOSSIBLE_FEE } from "./frontmath/frontMath";
-import { BLACK_HOLE_ADDRESS } from "./tonUtils";
+import { ContractErrors, ContractOpcodes, OpcodesLookup } from "./opCodes";
+import { nftContentPackedDefault, nftItemContentPackedDefault } from "./PoolV3Contract-V1";
+import { FEE_DENOMINATOR, IMPOSSIBLE_FEE, MaxUint256 } from "./frontmath/frontMath";
 import { ContractMessageMeta, MetaMessage, StructureVisitor } from "./meta/structureVisitor";
 import { ParseDataVisitor } from "./meta/parseDataVisitor";
-
+import { BLACK_HOLE_ADDRESS } from "./tonUtils";
 
 /** Initial data structures and settings **/
-export const TIMELOCK_DELAY_DEFAULT : bigint = 2n * 24n * 60n * 60n;
+export const TIMELOCK_DELAY_DEFAULT : bigint = 5n * 60n;
 
 export type RouterV3ContractConfig = {    
     adminAddress : Address,  
     poolAdminAddress? : Address,  
     
-    poolFactoryAddress : Address,
+    poolFactoryAddress : Address,      
     flags? : bigint,
     poolv3_code : Cell;    
     accountv3_code : Cell;
@@ -23,11 +22,19 @@ export type RouterV3ContractConfig = {
     timelockDelay? : bigint;
 
     nonce? : bigint;
+
+    throttling? : {
+        mint_limit : number,
+        last_hour  : number, 
+        history : number[]
+
+    }
 }
 
 
 export function routerv3ContractConfigToCell(config: RouterV3ContractConfig): Cell {
-    return beginCell()
+
+    let result = beginCell()
         .storeAddress(config.adminAddress)
         .storeAddress(config.poolAdminAddress ?? config.adminAddress) 
         .storeAddress(config.poolFactoryAddress)
@@ -45,7 +52,28 @@ export function routerv3ContractConfigToCell(config: RouterV3ContractConfig): Ce
             .storeUint(0,3)   // 3 maybe refs for active timelocks
         .endCell())
         .storeUint(config.nonce ?? 0, 64)
-    .endCell()    
+
+    if (config.throttling) {
+        let packed512 : bigint = 0n
+        for (let i = 0; i < 24; i++) {
+            packed512 = packed512 << 16n;
+            packed512 |= BigInt((config.throttling.history[23 - i]) & 0xFFFF)
+        }
+
+        let i0 = (packed512 >> 256n) & MaxUint256;
+        let i1 = (packed512) & MaxUint256;
+
+        let throttlingBulder = beginCell()
+            .storeUint(config.throttling.mint_limit, 16)
+            .storeUint(config.throttling.last_hour, 60)
+            .storeUint(i0, 256)
+            .storeUint(i1, 256)
+            
+                    
+        result.storeRef(throttlingBulder.endCell())
+    }
+
+    return result.endCell()    
 }
 
 export function routerv3ContractCellToConfig(c: Cell): RouterV3ContractConfig {
@@ -71,11 +99,34 @@ export function routerv3ContractCellToConfig(c: Cell): RouterV3ContractConfig {
         nonce = s.loadUintBig(64)
     }
 
-    return {adminAddress, poolAdminAddress, poolFactoryAddress, flags, poolv3_code, accountv3_code, position_nftv3_code, timelockDelay, nonce}
+    let throttling :{
+        mint_limit : number,
+        last_hour  : number, 
+        history : number[]
+    } | undefined = undefined
+
+    if (s.remainingRefs != 0 ) {
+        const throttlingSlice : Slice = s.loadRef().beginParse()
+        let mint_limit = throttlingSlice.loadUint(16)
+        let last_hour  = throttlingSlice.loadUint(60) 
+        let i0 = throttlingSlice.loadUintBig(256)
+        let i1 = throttlingSlice.loadUintBig(256)
+        let packed512 : bigint = (i0 << 256n) | i1;
+        
+        let history : number[] = []
+        for (let i = 0; i < 24; i++)
+        {
+            history.push(Number(packed512 & 0xFFFFn));
+            packed512 = packed512 >> 16n;
+
+        }
+        throttling = {mint_limit, last_hour, history}
+    }
+
+    return {adminAddress, poolAdminAddress, poolFactoryAddress, flags, poolv3_code, accountv3_code, position_nftv3_code, timelockDelay, nonce, throttling}
 }
 
 export class RouterV3Contract implements Contract {
-    static FLAG_PAYLOADS          : bigint = 0x1n;
     constructor(
         readonly address: Address,
         readonly init?: { code: Cell; data: Cell }
@@ -111,7 +162,6 @@ export class RouterV3Contract implements Contract {
             jetton0Minter?: Address,
             jetton1Minter?: Address,
             controllerAddress?: Address,
-            arbiter_address? : Address;
 
             nftContentPacked? : Cell,
             nftItemContentPacked? : Cell,
@@ -122,30 +172,27 @@ export class RouterV3Contract implements Contract {
         }
     ) : Cell
     {
-        const msg_body : Cell = beginCell()
-            .storeUint(ContractOpcodes.ROUTERV3_CREATE_POOL, 32) // OP code
-            .storeUint(0, 64) // query_id        
-            .storeAddress(jetton0WalletAddr)
-            .storeAddress(jetton1WalletAddr)
-            .storeUint(tickSpacing , 24)
-            .storeUint(sqrtPriceX96, 160)
-            .storeUint(activatePool ? 1 : 0, 1)
-            .storeUint(opts.protocolFee ? opts.protocolFee  : IMPOSSIBLE_FEE , 16)
-            .storeUint(opts.lpFee       ? opts.lpFee        : IMPOSSIBLE_FEE , 16)
-            .storeUint(opts.currentFee  ? opts.currentFee   : IMPOSSIBLE_FEE , 16)
+      const msg_body : Cell = beginCell()
+          .storeUint(ContractOpcodes.ROUTERV3_CREATE_POOL, 32) // OP code
+          .storeUint(0, 64) // query_id        
+          .storeAddress(jetton0WalletAddr)
+          .storeAddress(jetton1WalletAddr)
+          .storeUint(tickSpacing , 24)
+          .storeUint(sqrtPriceX96, 160)
+          .storeUint(activatePool ? 1 : 0, 1)
+          .storeUint(opts.protocolFee ? opts.protocolFee  : IMPOSSIBLE_FEE , 16)
+          .storeUint(opts.lpFee       ? opts.lpFee        : IMPOSSIBLE_FEE , 16)
+          .storeUint(opts.currentFee  ? opts.currentFee   : IMPOSSIBLE_FEE , 16)
 
-            .storeRef (opts.nftContentPacked     ?? nftContentPackedDefault)
-            .storeRef (opts.nftItemContentPacked ?? nftItemContentPackedDefault)
-            .storeRef (beginCell()
-                .storeAddress(opts.jetton0Minter)
-                .storeAddress(opts.jetton1Minter)
-                .storeAddress(opts.controllerAddress)
-                .storeMaybeRef(opts.arbiter_address ? beginCell()
-                    .storeAddress(opts.arbiter_address)                    
-                .endCell() : null)
-            .endCell())
-        .endCell();
-        return msg_body;
+          .storeRef (opts.nftContentPacked     ?? nftContentPackedDefault)
+          .storeRef (opts.nftItemContentPacked ?? nftItemContentPackedDefault)
+          .storeRef (beginCell()
+              .storeAddress(opts.jetton0Minter)
+              .storeAddress(opts.jetton1Minter)
+              .storeAddress(opts.controllerAddress)
+          .endCell())
+      .endCell();
+      return msg_body;
     }
 
     /* We need to rework printParsedInput not to double the code */
@@ -155,10 +202,9 @@ export class RouterV3Contract implements Contract {
         tickSpacing : number,
         sqrtPriceX96: bigint,
         activatePool : boolean,
-        jetton0Minter?: Address | null,
-        jetton1Minter?: Address | null,
+        jetton0Minter?: Address,
+        jetton1Minter?: Address,
         controllerAddress?: Address,
-        arbiterAddress? : Address,
 
         nftContentPacked? : Cell,
         nftItemContentPacked? : Cell,
@@ -191,24 +237,18 @@ export class RouterV3Contract implements Contract {
         let nftItemContentPacked = s.loadRef()
 
         let s1 = s.loadRef().beginParse()
-            let jetton0Minter = s1.loadAddressAny()
-            let jetton1Minter = s1.loadAddressAny()
-            let controllerAddress = s1.loadAddressAny()
-
-            let arbiterAddress : Address | undefined = undefined
-            if (s1.remainingRefs > 0) {
-                arbiterAddress = s1.loadRef().beginParse().loadAddress()
-            }
+        let jetton0Minter = s1.loadAddress()
+        let jetton1Minter = s1.loadAddress()
+        let controllerAddress = s1.loadAddress()
 
         return {
             jetton0WalletAddr, jetton1WalletAddr,
             tickSpacing,
             sqrtPriceX96,
             activatePool,
-            jetton0Minter     : jetton0Minter     as Address | null,
-            jetton1Minter     : jetton1Minter     as Address | null,
-            controllerAddress : controllerAddress as Address | null,  
-            arbiterAddress, 
+            jetton0Minter,
+            jetton1Minter,
+            controllerAddress,    
             nftContentPacked,
             nftItemContentPacked,
             protocolFee,
@@ -231,7 +271,6 @@ export class RouterV3Contract implements Contract {
           jetton0Minter?: Address,
           jetton1Minter?: Address,
           controllerAddress?: Address,
-          arbiter_address? : Address,
 
           nftContentPacked? : Cell,
           nftItemContentPacked? : Cell,
@@ -254,52 +293,6 @@ export class RouterV3Contract implements Contract {
         .endCell();
 
         return await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: msg_body });
-    }
-
-    /* ============= Payloads for JETTON_TRANSFER_NOTIFICATION =========== */
-
-    static swapPayloadMessage(
-        originAddress : Address, // Address to receive result of the swap   
-
-        targetRW : Address,     // JettonWallet attached to Router is used to identify target token   
-        priceLimit? : bigint,   // Minimum/maximum internal pool price that we are ready to reach
-        minOutAmount? : bigint, // Minimum amount to get back
-        payloads? : {
-            targetAddress : Address,
-            okForwardAmount   : bigint,
-            okForwardPayload  : Cell,
-            retForwardAmount  : bigint,
-            retForwardPayload : Cell,            
-        },
-        referral? : {
-            code : number
-        }
-
-    ) : Cell
-    {
-        return beginCell()
-            .storeUint( ContractOpcodes.POOLV3_SWAP, 32) // Request to swap
-            .storeAddress(targetRW)                            
-            .storeUint   (priceLimit ?? 0n, 160)              
-            .storeCoins  (minOutAmount ?? 0n)            
-            .storeAddress(originAddress)                    
-            .storeMaybeRef(payloads ? 
-                beginCell()
-                    .storeAddress(payloads.targetAddress)
-                    .storeCoins  (payloads.okForwardAmount)
-                    .storeRef    (payloads.okForwardPayload)
-                    .storeCoins  (payloads.retForwardAmount)
-                    .storeRef    (payloads.retForwardPayload)
-                .endCell() :
-                null
-            )  
-            .storeMaybeRef(referral ?
-                beginCell()
-                    .storeUint(referral.code, 32)
-                .endCell() :
-                null 
-            )                   
-        .endCell()
     }
 
     /* =============  CHANGE ADMIN =============  */
@@ -402,8 +395,10 @@ export class RouterV3Contract implements Contract {
     static changeRouterParamMessage(opts : {
         newPoolAdmin? : Address,
         newPoolFactory? : Address,
-     //   newFlags? : bigint
+        newThrottlingRate? : number,
+        newLastHour? : number
     } ) : Cell {
+        console.log(opts)
         return beginCell()
             .storeUint(ContractOpcodes.ROUTERV3_CHANGE_PARAMS, 32) // OP code
             .storeUint(0, 64) // QueryID what for?           
@@ -411,12 +406,18 @@ export class RouterV3Contract implements Contract {
             .storeAddress(opts.newPoolFactory ?? BLACK_HOLE_ADDRESS)
             .storeUint(opts.newPoolAdmin ? 1 : 0, 1)
             .storeAddress(opts.newPoolAdmin ?? BLACK_HOLE_ADDRESS)            
+            .storeUint(opts.newThrottlingRate ? 1 : 0, 1)
+            .storeUint(opts.newThrottlingRate ?? 1500, 16)            
+            .storeUint(opts.newLastHour ? 1 : 0, 1)
+            .storeUint(opts.newLastHour ?? 0, 60)      
         .endCell();
     }
 
     static unpackChangeRouterParamMessage( body :Cell) : {
         newPoolAdmin? : Address        
         newPoolFactory? : Address
+        newThrottlingRate? : number,
+        newLastHour? : number
     }
     {
         let s = body.beginParse()
@@ -426,20 +427,34 @@ export class RouterV3Contract implements Contract {
 
         const query_id = s.loadUint(64)
         const hasPoolFactory = s.loadBit()      
-        const newPoolFactoryV = s.loadAddress()
+        const newPoolFactoryV = s.loadAddressAny() as (Address | null)
         const newPoolFactory = hasPoolFactory ? newPoolFactoryV : undefined
 
         const hasPoolAdmin = s.loadBit()
-        const newPoolAdminV = s.loadAddress()
+        const newPoolAdminV = s.loadAddressAny() as (Address | null)
         const newPoolAdmin = hasPoolAdmin ? newPoolAdminV : undefined
+
+        let newThrottlingRate = undefined
+        let newLastHour = undefined
+        if (s.remainingBits > 0) {        
+            const hasThrottlingRate = s.loadBit()
+            const newThrottlingRateV = s.loadUint(16)
+            newThrottlingRate = hasThrottlingRate ? newThrottlingRateV : undefined
+
+            const hasLastHour = s.loadBit()
+            const newLastHourV = s.loadUint(60)
+            newLastHour = hasLastHour ? newLastHourV : undefined
+        }
         
-        return {newPoolAdmin, newPoolFactory}
+        return {newPoolAdmin, newPoolFactory, newThrottlingRate, newLastHour}
     }
 
     async sendChangeRouterParams(provider: ContractProvider, sender: Sender, value: bigint, 
         opts : {
-            newPoolAdmin? : Address        
-            newPoolFactory? : Address           
+            newPoolAdmin? : Address,  
+            newPoolFactory? : Address,
+            newThrottlingRate? : number,
+            newLastHour? : number 
         }
     ) {
         const msg_body = RouterV3Contract.changeRouterParamMessage(opts)
@@ -576,6 +591,27 @@ export class RouterV3Contract implements Contract {
       return stack.readCell();
     }
 
+    /* Only in debug builds */
+
+    async getShift2Left(provider: ContractProvider, i0: bigint, i1: bigint, shift: number) : Promise<[bigint, bigint]> {
+        const { stack } = await provider.get("shl2int", [
+            { type: 'int', value: i0 },
+            { type: 'int', value: i1 },
+            { type: 'int', value: BigInt(shift) },          
+        ]);
+        return [stack.readBigNumber(), stack.readBigNumber()];
+    }
+
+    async getLogicShift(provider: ContractProvider, x: bigint, shift: number) : Promise<bigint> {
+        const { stack } = await provider.get("logic_lshift", [
+            { type: 'int', value: x },          
+            { type: 'int', value: BigInt(shift) },          
+        ]);
+        return stack.readBigNumber();
+    }
+    
+
+    /* META */
 
     static metaDescription : MetaMessage[] =     
     [
@@ -584,11 +620,11 @@ export class RouterV3Contract implements Contract {
         description : "Process router funding, payload determines if it is mint or swap",
 
         acceptor : (visitor: StructureVisitor) => {
-            visitor.visitField({ name:`op`,              type:`Uint`,    size:32,   meta:"op", comment: ""})    
-            visitor.visitField({ name:`query_id`,        type:`Uint`,    size:64,   meta:"",   comment: "queryid as of the TON documentation"}) 
-            visitor.visitField({ name:`jetton_amount`,   type:`Coins`,   size:124,  meta:"",   comment: "Amount of coins sent to the router"}) 
-            visitor.visitField({ name:`from_user`,       type:`Address`, size:267,  meta:"",   comment: "User that originated the transfer"})
-            visitor.visitField({ name:`forward_payload`, type:`Cell`,    size:0,    meta:"Either, Payload",comment: "Payload for processing"}) 
+            visitor.visitField({ name:`op`,            type:`Uint`,    size:32,   meta:"op", comment: ""})    
+            visitor.visitField({ name:`query_id`,      type:`Uint`,    size:64,   meta:"",   comment: "queryid as of the TON documentation"}) 
+            visitor.visitField({ name:`jetton_amount`, type:`Coins`,   size:124,  meta:"",   comment: "Amount of coins sent to the router"}) 
+            visitor.visitField({ name:`from_user`,     type:`Address`, size:267 , meta:"",   comment: "User that originated the transfer"})
+            visitor.visitField({ name:`forward_payload`, type:`Cell`,  size:0, meta:"Either, Payload",comment: "Payload for processing"}) 
         }
     },
     {
@@ -641,20 +677,6 @@ export class RouterV3Contract implements Contract {
         }
     },
     {
-        opcode : ContractOpcodes.POOLV3_FUND_SOMEONES_ACCOUNT,
-        description : "This is not a message Op this is a payload format for JETTON_TRANSFER_NOTIFICATION",
-
-        acceptor : (visitor: StructureVisitor) => {
-            visitor.visitField({ name:`op`,               type:`Uint`,    size:32,  meta:"op", comment: ""})    
-            visitor.visitField({ name:`jetton_target_w`,  type:`Address`, size:267, meta:"",   comment: "Address of the second jetton wallet (first is identified by sender_address). Used to compute pool address"})
-            visitor.visitField({ name:`to_user`        ,  type:`Address`, size:267, meta:"",   comment: "User to fund"})
-
-            //visitor.visitField({ name:`query_id`,         type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"}) 
-
-           
-        }
-    },
-    {
         opcode : ContractOpcodes.POOLV3_SWAP,
         description : "This is not a message Op this is a payload format for JETTON_TRANSFER_NOTIFICATION" + 
         "",
@@ -667,11 +689,11 @@ export class RouterV3Contract implements Contract {
             visitor.visitField({ name:`owner_address`,       type:`Address`, size:267, meta:"",    comment: "Address of the sender"})
            
             visitor.enterCell( { name:"multihop_cell",       type:`Maybe`, comment : "Cell with multihop data"})
-            visitor.visitField({ name:`target_address`,      type:`Address`, size:267, meta:"",        comment: "Address of the receiver"})
-            visitor.visitField({ name:`ok_forward_amount`,   type:`Coins`,   size:124, meta:"",        comment : ""}) 
-            visitor.visitField({ name:`ok_forward_payload`,  type:`Cell`,    size:0,   meta:"Payload", comment: "Payload for processing by target with swapped coins"}) 
-            visitor.visitField({ name:`ret_forward_amount`,  type:`Coins`,   size:124, meta:"",        comment : ""}) 
-            visitor.visitField({ name:`ret_forward_payload`, type:`Cell`,    size:0,   meta:"Payload", comment: "Payload for processing by owner with change/return coins"}) 
+            visitor.visitField({ name:`target_address`,      type:`Address`, size:267, meta:"",    comment: "Address of the reciever"})
+            visitor.visitField({ name:`ok_forward_amount`,   type:`Coins`,   size:124, meta:"",    comment : ""}) 
+            visitor.visitField({ name:`ok_forward_payload`,  type:`Cell`,  size:0, meta:"Payload", comment: "Payload for processing by target with swapped coins"}) 
+            visitor.visitField({ name:`ret_forward_amount`,  type:`Coins`,   size:124, meta:"",    comment : ""}) 
+            visitor.visitField({ name:`ret_forward_payload`, type:`Cell`,  size:0, meta:"Payload", comment: "Payload for processing by owner with change/return coins"}) 
             visitor.leaveCell({})
             visitor.enterCell( { name:"referral_cell",       type:`IfExists`, comment : "Cell with referral data"})
             visitor.visitField({ name:`code`,                type:`Uint`,    size:32,  meta:"",  comment: ""})               
@@ -682,14 +704,14 @@ export class RouterV3Contract implements Contract {
         opcode : ContractOpcodes.ROUTERV3_PAY_TO,
         description : "This is not a message Op this is a payload format for JETTON_TRANSFER_NOTIFICATION",  
         acceptor : (visitor: StructureVisitor) => {
-            visitor.visitField({ name:`op`,        type:`Uint`,    size:32,  meta:"op", comment: ""})    
-            visitor.visitField({ name:`query_id`,  type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"}) 
+            visitor.visitField({ name:`op`,       type:`Uint`,    size:32,  meta:"op", comment: ""})    
+            visitor.visitField({ name:`query_id`, type:`Uint`,    size:64,  meta:"",   comment: "queryid as of the TON documentation"}) 
             visitor.visitField({ name:`reciever0`, type:`Address`, size:267, meta:"",   comment: "Address of the first reciever of the funds"})
             visitor.visitField({ name:`reciever1`, type:`Address`, size:267, meta:"",   comment: "Address of the second reciever of the funds"})
 
-            visitor.visitField({ name:`exit_code`, type:`Uint`,    size:32,  meta:"",   comment: "queryid as of the TON documentation"}) 
-            visitor.visitField({ name:`seqno`   ,  type:`Uint`,    size:64,  meta:"Indexer",   comment: "queryid as of the TON documentation"}) 
-            visitor.enterCell( { name:"coinsinfo_cell",  type:`Maybe`,  comment : "Cell with info about the coins"})
+            visitor.visitField({ name:`exit_code`,type:`Uint`,    size:32,  meta:"",   comment: "queryid as of the TON documentation"}) 
+            visitor.visitField({ name:`seqno`   , type:`Uint`,    size:64,  meta:"Indexer",   comment: "queryid as of the TON documentation"}) 
+            visitor.enterCell( { name:"coinsinfo_cell",  type:`Maybe`, comment : "Cell with info about the coins"})
                 visitor.visitField({ name:`amount0`,         type:`Coins`,    size:124,  meta:"", comment : "Amount of coins to be payed to reciever0"}) 
                 visitor.visitField({ name:`jetton0_address`, type:`Address`,  size:267,  meta:"", comment : "Jetton to be sent to reciever0 identified by the wallet that belongs to router"}) 
                 visitor.visitField({ name:`amount1`,         type:`Coins`,    size:124,  meta:"", comment : "Amount of coins to be payed to reciever1"}) 
@@ -772,7 +794,7 @@ export class RouterV3Contract implements Contract {
     static printParsedInput(body: Cell) : ContractMessageMeta[] {
 
         let result : ContractMessageMeta[] = []
-        let p = body.beginParse()
+        let p = body.beginParse()        
         let op : number  = p.preloadUint(32)
 
         for (let meta of this.metaDescription) {

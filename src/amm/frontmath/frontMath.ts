@@ -7,6 +7,7 @@ export const IMPOSSIBLE_FEE: number = FEE_DENOMINATOR + 1
 // constants used internally but not expected to be used externally
 export const MaxUint256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn
 export const MaxUint128 = 0xffffffffffffffffffffffffffffffffn
+export const MaxUint120 = 0xffffffffffffffffffffffffffffffn
 // used in liquidity amount math
 export const Q32  : bigint = 2n**32n
 export const Q96  : bigint = 2n**96n 

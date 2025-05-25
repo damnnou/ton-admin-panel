@@ -1,10 +1,10 @@
-import { Address, beginCell, Cell,  Dictionary, DictionaryValue, Contract, contractAddress,  ContractProvider, Sender, SendMode, Slice } from "@ton/core";
-import { ContractOpcodes } from "./opCodes";
+import { Address, beginCell, Cell,  Dictionary, DictionaryValue, Contract, contractAddress,  ContractProvider, Sender, SendMode, TupleReader, Slice } from "@ton/core";
+import { ContractOpcodes, OpcodesLookup } from "./opCodes";
 import { packJettonOnchainMetadata} from "./common/jettonContent";
-import { BLACK_HOLE_ADDRESS } from "./tonUtils";
-import { FEE_DENOMINATOR, IMPOSSIBLE_FEE, MaxUint120 } from "./frontmath/frontMath";
+import { FEE_DENOMINATOR, IMPOSSIBLE_FEE } from "./frontmath/frontMath";
 import { ContractMessageMeta, MetaMessage, StructureVisitor } from "./meta/structureVisitor";
 import { ParseDataVisitor } from "./meta/parseDataVisitor";
+import { BLACK_HOLE_ADDRESS } from "./tonUtils";
   
 export type TickInfoWrapper = { 
     liquidityGross : bigint,
@@ -63,8 +63,8 @@ export type PoolV3ContractConfig = {
 
 export const DictionaryTickInfo: DictionaryValue<TickInfoWrapper> = {
     serialize(src, builder) {
-        builder.storeUint(src.liquidityGross      , 256);
-        builder.storeInt (src.liquidityNet        , 128);
+        builder.storeUint(src.liquidityGross, 256);
+        builder.storeInt (src.liquidityNet, 128);
         builder.storeInt (src.outerFeeGrowth0Token, 256);
         builder.storeInt (src.outerFeeGrowth1Token, 256);        
     },
@@ -200,7 +200,7 @@ export function poolv3ContractConfigToCell(config: PoolV3ContractConfig): Cell {
                 .storeAddress(config.jetton0_minter  ?? BLACK_HOLE_ADDRESS) // poolv3::jetton0_minter
                 .storeAddress(config.jetton1_minter  ?? BLACK_HOLE_ADDRESS) // poolv3::jetton1_minter
 		        .storeAddress(config.arbiter_address ?? BLACK_HOLE_ADDRESS) 
-            .endCell())          
+            .endCell())
         .endCell())      
         .storeRef( ticksCell )
         .storeRef( beginCell()
@@ -363,19 +363,16 @@ export class PoolV3Contract implements Contract {
         const address = contractAddress(workchain, init);    
         return new PoolV3Contract(address, init);
         }
-
+    
     static reinitMessage(
         opts: ReinitOptions
     ) : Cell
     {
-        console.log("reinitMessage")
-        console.log(opts)        
-
         if (opts.is_from_admin == undefined) {
             opts.is_from_admin = true
         }
 
-        let minterCell : Cell | null = null;
+        let minterCell = null;
         if (opts.jetton0Minter && opts.jetton0Minter) {
             minterCell = beginCell()
                 .storeAddress(opts.jetton0Minter)
@@ -387,14 +384,10 @@ export class PoolV3Contract implements Contract {
             .storeUint(0, 64) // query_id
             .storeUint(opts.is_from_admin ? 1 : 0, 1) // is_from_admin
             
-            .storeRef(beginCell()
-                .storeUint(opts.admin == undefined ? 0 : 1, 1)
-                .storeAddress(opts.admin)                 // null is an invalid Address, but valid slice
-                .storeUint(opts.controller == undefined ? 0 : 1, 1)
-                .storeAddress(opts.controller)
-                .storeUint   (opts.arbiter == undefined ? 0 : 1, 1)
-                .storeAddress(opts.arbiter)                 
-            .endCell())
+            .storeUint(opts.admin == undefined ? 0 : 1, 1)
+            .storeAddress(opts.admin)                 // null is an invalid Address, but valid slice
+            .storeUint(opts.controller == undefined ? 0 : 1, 1)
+            .storeAddress(opts.controller)
 
             .storeUint(opts.tickSpacing == undefined ? 0 : 1, 1)
             .storeUint(opts.tickSpacing ?? 0, 24)
@@ -423,19 +416,13 @@ export class PoolV3Contract implements Contract {
             throw Error("Wrong opcode")
         const query_id = s.loadUint(64)
         const is_from_admin = (s.loadUint(1) != 0)
+        const setAdmin = s.loadUint(1)
+        const admin = (setAdmin == 1) ? s.loadAddress() : undefined
+        if (setAdmin == 0) { s.loadUint(2) }
 
-        const roles : Slice = s.loadRef().beginParse()
-            const hasAdmin = roles.loadUint(1)
-            const adminV   = roles.loadAddressAny()
-            const admin    = hasAdmin ? adminV as Address : undefined
-
-            const hasController = roles.loadUint(1)
-            const controllerV   = roles.loadAddressAny() 
-            const controller    = hasController ? controllerV as Address : undefined
-
-            const hasArbiter   = roles.loadUint(1)
-            const arbiterV  = roles.loadAddressAny() 
-            const arbiter   = hasArbiter ? arbiterV as Address : undefined
+        const setControl = s.loadUint(1)
+        const controller = (setControl == 1) ? s.loadAddress() : undefined
+        if (setControl == 0) { s.loadUint(2) }
 
         const setTickSpacing = s.loadUint(1)
         let tickSpacingV = s.loadUint(24) 
@@ -464,7 +451,7 @@ export class PoolV3Contract implements Contract {
         let nftItemContentPackedV = s.loadRef()
         let nftItemContentPacked  =  (nftItemContentPackedV.beginParse().remainingBits != 0) ? nftItemContentPackedV : undefined
 
-        return {is_from_admin, admin, controller, arbiter, tickSpacing, sqrtPriceX96, activate_pool, nftContentPacked, nftItemContentPacked, protocolFee, lpFee, currentFee}
+        return {is_from_admin, admin, controller, tickSpacing, sqrtPriceX96, activate_pool, nftContentPacked, nftItemContentPacked, protocolFee, lpFee, currentFee}
 
     }
 
@@ -477,7 +464,7 @@ export class PoolV3Contract implements Contract {
             opts.activate_pool = false
         }
 
-        let minterCell : Cell | null = null
+        let minterCell = null
         if (opts.jetton0Minter && opts.jetton0Minter) {
             minterCell = beginCell()
                 .storeAddress(opts.jetton0Minter)
@@ -599,57 +586,29 @@ export class PoolV3Contract implements Contract {
     }
 
     /* ==== PROTOCOL COLLECT ==== */
-    static messageCollectProtocol(target_address? : Address, collectFeeAmount0? : bigint, collectFeeAmount1? : bigint) : Cell {
-        let body = beginCell()
+    static messageCollectProtocol() : Cell {
+        return beginCell()
             .storeUint(ContractOpcodes.POOLV3_COLLECT_PROTOCOL, 32) // OP code
-            .storeUint(0, 64) // query_id                      
-            
-        if (target_address) {
-            body = body
-                .storeAddress(target_address)
-                .storeCoins(collectFeeAmount0 ?? MaxUint120)
-                .storeCoins(collectFeeAmount1 ?? MaxUint120)
-        }
-        return body.endCell()
+            .storeUint(0, 64) // query_id          
+        .endCell()
     }
 
-    static unpackCollectProtocolMessage(body : Cell) : {
-        target_address? : Address, 
-        collectFeeAmount0? : bigint, 
-        collectFeeAmount1? : bigint 
-    } {
+    static unpackCollectProtocolMessage(body : Cell) {
         let s = body.beginParse()
         const op       = s.loadUint(32)
         if (op != ContractOpcodes.POOLV3_COLLECT_PROTOCOL)
             throw Error("Wrong opcode")
+
         const query_id = s.loadUint(64)
-
-        let target_address
-        let collectFeeAmount0
-        let collectFeeAmount1
-
-        if (s.remainingBits != 0) {
-            target_address = s.loadAddress()
-            collectFeeAmount0 = s.loadCoins()
-            collectFeeAmount1 = s.loadCoins()
-        }
-
-        return {target_address, collectFeeAmount0, collectFeeAmount1}
-        
     }
 
     async sendCollectProtocol(
-        provider: ContractProvider, sender: Sender, value: bigint, 
-        target_address? : Address, 
-        collectFeeAmount0? : bigint, 
-        collectFeeAmount1? : bigint
+        provider: ContractProvider, 
+        sender: Sender, 
+        value: bigint, 
     ) {
         
-        await provider.internal(sender, { 
-            value, 
-            sendMode: SendMode.PAY_GAS_SEPARATELY, 
-            body: PoolV3Contract.messageCollectProtocol(target_address, collectFeeAmount0, collectFeeAmount1) 
-        })
+        await provider.internal(sender, { value, sendMode: SendMode.PAY_GAS_SEPARATELY, body: PoolV3Contract.messageCollectProtocol() })
     }
      
     static messageBurn(
@@ -747,7 +706,7 @@ export class PoolV3Contract implements Contract {
     ) : Cell {
         return beginCell()
             .storeUint(ContractOpcodes.POOLV3_SWAP, 32) // op
-            .storeUint(0, 64)                           // query id
+                .storeUint(0, 64)                                 // query id
 
             .storeAddress(owner)
             .storeAddress(sourceWallet)
@@ -764,7 +723,7 @@ export class PoolV3Contract implements Contract {
                 .storeCoins(0)                
                 .storeMaybeRef(null)
             .endCell())            
-        .endCell()
+            .endCell()
     }
    
     /** Getters **/

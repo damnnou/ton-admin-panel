@@ -1,5 +1,5 @@
 import { Address } from "@ton/core"
-import { PoolV3Contract } from "../amm/PoolV3Contract"
+import { PoolV3Contract } from "../amm/PoolV3Contract-V1"
 import { MyNetworkProvider } from "../utils/MyNetworkProvider"
 import BigNumber from "bignumber.js"
 import { getJettonMetadata } from "../jettonCache"

@@ -40,7 +40,10 @@ export const getAddressFormat = async (address: Address, isTestnet: boolean): Pr
     return Address.parseFriendly(friendly);
 }
 
-export const formatAddressAndUrl = async (address: Address, isTestnet: boolean) => {
+export const formatAddressAndUrl = async (address: Address | null, isTestnet: boolean) => {
+    if (address == null) {
+        return "(null)"
+    }
     const f = await getAddressFormat(address, isTestnet);
     return makeAddressLink(f);
 }

@@ -5,7 +5,7 @@ import { unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 import { escapeHtml } from "./utils/utils";
 
 
-type UnpackedMetadata = {[x:string] : string}
+export type UnpackedMetadata = {[x:string] : string}
 
 let jettonCache : {[x:string] : UnpackedMetadata } = {}
 

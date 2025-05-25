@@ -1,6 +1,8 @@
 import { OrderType } from "./orders"
 
-import { RouterV3Contract, routerv3ContractCellToConfig, RouterV3ContractConfig, routerv3ContractConfigToCell} from "./amm/RouterV3Contract";
+import { RouterV3Contract, routerv3ContractCellToConfig, RouterV3ContractConfig, routerv3ContractConfigToCell} from "./amm/RouterV3Contract-V1";
+import { RouterV3Contract as RouterV3ContractV1_5 } from "./amm/RouterV3Contract";
+
 import { ContractOpcodes } from "./amm/opCodes";
 import { packJettonOnchainMetadata, unpackJettonOnchainMetadata } from "./amm/common/jettonContent";
 
@@ -10,10 +12,12 @@ import { JettonMinter } from "./jetton/JettonMinter"
 import { MyNetworkProvider } from "./utils/MyNetworkProvider"
 
 import { encodePriceSqrt, FEE_DENOMINATOR, getApproxFloatPrice, TickMath } from "./amm/frontmath/frontMath"
-import {  PoolV3Contract, poolv3StateInitConfig } from "./amm/PoolV3Contract"
+import {  nftContentPackedDefault, PoolV3Contract, poolv3StateInitConfig } from "./amm/PoolV3Contract-V1"
+import {  nftItemContentPackedDefault, PoolV3Contract as PoolV3ContractV1_5 } from "./amm/PoolV3Contract"
+
 import { PoolFactoryContractConfig, poolFactoryContractConfigToCell } from "./amm/PoolFactoryContract"
 
-import { getJettonMetadata } from "./jettonCache"
+import { getJettonMetadata, UnpackedMetadata } from "./jettonCache"
 import { formatAddressAndUrl } from "./utils/utils"
 import { poolSnippet } from "./snippets/poolSnippets"
 
@@ -311,7 +315,7 @@ export class AMMOrders {
                 }
             },      
             {
-                name: 'Deploy Pool (from Admin)',
+                name: 'Deploy Pool (from SuperAdmin)',
                 fields: {
                     amount: { name: 'TON Amount',     type: 'TON'     , default : "0.2" },
                     router: { name: 'Router Address', type: 'Address' , default : getJettonList(IS_TESTNET)[0].minter.toString()},
@@ -428,6 +432,42 @@ export class AMMOrders {
 
                     return {
                         toAddress: values.router,
+                        tonAmount: values.amount,
+                        body: msg_body
+                    }
+                }
+            },
+            {
+                name: 'Change Pool Arbiter (from SuperAdmin)',
+                fields: {
+                    pool:    {name: 'Pool Address'   , type: 'Address'},
+                    arbiter: {name: 'Arbiter Address', type: 'Address'},
+                    amount:  {name: 'TON Amount'     , type: 'TON', default:"0.1"},
+                },
+                makeMessage: async (values, multisigAddress : Address) => {
+
+                    const poolAddress = values.pool.address
+                    const poolContract = new PoolV3Contract(poolAddress)
+                    const provider = new MyNetworkProvider(poolAddress, IS_TESTNET)
+                    const state = await poolContract.getPoolStateAndConfiguration(provider)
+                    if (state.arbiter_address == null) {
+                        throw Error("Your pool is not V1.5")
+                    }             
+
+                    const msg_body = RouterV3ContractV1_5.deployPoolMessage(
+                        state.jetton0_wallet, 
+                        state.jetton1_wallet, 
+                        state.tick_spacing, 
+                        state.price_sqrt, 
+                        state.pool_active,
+                        {
+                            arbiter_address : values.arbiter.address,
+                            nftContentPacked : Cell.EMPTY,
+                            nftItemContentPacked : Cell.EMPTY
+                        }
+                    )
+                    return {
+                        toAddress: {address: state.router_address, isTestOnly : IS_TESTNET, isBounceable: false},
                         tonAmount: values.amount,
                         body: msg_body
                     }
@@ -852,8 +892,29 @@ export class AMMOrders {
         }
 
         try {
-            console.log("Checking for the deploy/reinit message")
-            let p = RouterV3Contract.unpackDeployPoolMessage(cell)
+            console.log("Checking for the deploy/reinit message")            
+            let p = null
+            let version = "none"
+            let arbiterS = "not in message"
+
+            try {
+                p = RouterV3Contract.unpackDeployPoolMessage(cell)
+                version = "V1"
+            } catch {}
+
+            if (p == null) {
+                try {
+                    p = RouterV3ContractV1_5.unpackDeployPoolMessage(cell)
+                    version = "V1.5"
+                    if (p.arbiterAddress) {
+                        arbiterS = await formatAddressAndUrl(p.arbiterAddress, isTestnet)
+                    }
+                } catch {}
+            }
+
+            if (p == null) {
+                throw Error ("Not a deploy message")
+            }
     
             console.log("Unpacked message into", p)
             
@@ -864,15 +925,22 @@ export class AMMOrders {
             const jetton1WalletS = await formatAddressAndUrl(p.jetton1WalletAddr, isTestnet)
     
     
-            const controllerS = await formatAddressAndUrl(p.controllerAddress, isTestnet)
+            const controllerS = await formatAddressAndUrl(p.controllerAddress, isTestnet)            
+           
+           
+            
             //const adminS      = await formatAddressAndUrl(p.adminAddress, isTestnet)
     
-            const metadata0 = await getJettonMetadata(p.jetton0Minter, isTestnet)
-            const metadata1 = await getJettonMetadata(p.jetton1Minter, isTestnet)
-    
-            const nftUnpack     = unpackJettonOnchainMetadata(p.nftContentPacked, false)
-            const nftItemUnpack = unpackJettonOnchainMetadata(p.nftItemContentPacked, false)
-
+            let metadata0 : UnpackedMetadata = {"symbol" : "Not in request", "name" : "Not in request" ,"decimals" : "9", "image" : ""}
+            let metadata1 : UnpackedMetadata = {"symbol" : "Not in request", "name" : "Not in request" ,"decimals" : "9", "image" : ""}
+            
+            if (p.jetton0Minter) {
+                metadata0 = await getJettonMetadata(p.jetton0Minter, isTestnet)                       
+            }
+            if (p.jetton1Minter) {
+                metadata1 = await getJettonMetadata(p.jetton1Minter, isTestnet)                       
+            }        
+           
             let order = PoolV3Contract.orderJettonId(p.jetton0WalletAddr, p.jetton1WalletAddr)
             let logicalJetton0Name = order ? metadata0["symbol"] : metadata1["symbol"]
             let logicalJetton1Name = order ? metadata1["symbol"] : metadata0["symbol"]
@@ -909,7 +977,7 @@ export class AMMOrders {
             let protocolFeeOfActive =  p.protocolFee / FEE_DENOMINATOR * 100
             let protocolFee = p.currentFee * p.protocolFee / (FEE_DENOMINATOR * FEE_DENOMINATOR) * 100
 
-            return `Create New Pool For<br/>` + 
+            let result =  `Create New Pool/Reinit old pool (contracts = ${version}) For<br/>` + 
             `  <b>Pool Address Guess:</b> ${poolContractAddressS} <br/>` +
             `  <b>Pool Address From Router</b> ${predictedPoolAddressS} <br/>` +
             `  <b>Minter1:</b> ${jetton0MinterS} &nbsp;<span><img src="${metadata0['image']}" width='24px' height='24px' > ${metadata0["symbol"]} - ${metadata0["name"]} [d:${metadata0["decimals"]}]</span><br/>` + 
@@ -921,30 +989,56 @@ export class AMMOrders {
             `  Tick Spacing : ${p.tickSpacing}<br/>` +
             `  Price : ${p.sqrtPriceX96} ( ${priceText} ) <br/>` +
     
-            `  Controller :  ${controllerS}<br/>` +           
+            `  Controller :  ${controllerS}<br/>` +
+            `  Arbiter :  ${arbiterS}<br/>` +
+
             //`  Admin :  ${adminS}<br/>` +
 
             `<table>` +
             `<tr><td>Active fee   <td/> ${p.currentFee}  <td/> | <td/>${activeFee}   % <td/></tr>` + 
             `<tr><td>Base fee     <td/> ${p.lpFee}       <td/> | <td/>${baseFee}     % <td/></tr>` + 
             `<tr><td>Protocol Fee <td/> ${p.protocolFee} <td/> | <td/>of current Fee ${protocolFeeOfActive} %, of swap amount ${protocolFee} % <td/></tr>` + 
-            `</table>`+
+            `</table>`;
 
-            (this.renderNFTContent(nftUnpack)) +
-            `          `+
-            `  <div class="pair_line_s">`+
-            `  <div>` +
-            `  NFT Item:  <br/>`  + 
-            `  <ol>`  + 
-                `  <li>  <b>Name:</b> ${nftItemUnpack["name"]} </li>`  + 
-                `  <li> <b>Description:</b> ${nftItemUnpack["description"]} </li>`  + 
-                `  <li> <b>Image:</b>  <a href="${nftItemUnpack["image"]}" >${nftItemUnpack["image"]} </a> </li>`  + 
-                `  <li> <b>Attributes:</b> ${nftItemUnpack["attributes"]} </li>`  + 
-            `  </ol>` +
-            `  </div>` +            
-            `  <div><img src="${nftItemUnpack["image"]}" width="128px" ></div>` +
-            `  </div> `+
-            `  <div><pre>` +
+            if (p.nftContentPacked)                
+            {
+                if (p.nftContentPacked.hash() == Cell.EMPTY.hash())
+                {
+                    result += "NFT Content: Unchanged <br/>"
+                } else {
+                    const nftUnpack     = unpackJettonOnchainMetadata(p.nftContentPacked, false)            
+                    result += (this.renderNFTContent(nftUnpack)) 
+                }
+            }
+
+            if (p.nftItemContentPacked)
+            {
+                if (p.nftItemContentPacked.hash() == Cell.EMPTY.hash())
+                {
+                    result += "NFT Item: Unchanged <br/>"
+                } else {
+                    const nftItemUnpack = unpackJettonOnchainMetadata(p.nftItemContentPacked, false)
+                    result +=
+                    `          `+
+                    `  <div class="pair_line_s">`+
+                    `  <div>` +
+                    `  NFT Item:  <br/>`  + 
+                    `  <ol>`  + 
+                        `  <li>  <b>Name:</b> ${nftItemUnpack["name"]} </li>`  + 
+                        `  <li> <b>Description:</b> ${nftItemUnpack["description"]} </li>`  + 
+                        `  <li> <b>Image:</b>  <a href="${nftItemUnpack["image"]}" >${nftItemUnpack["image"]} </a> </li>`  + 
+                        `  <li> <b>Attributes:</b> ${nftItemUnpack["attributes"]} </li>`  + 
+                    `  </ol>` +
+                    `  </div>` +            
+                    `  <div><img src="${nftItemUnpack["image"]}" width="128px" ></div>` +
+                    `  </div> `+
+                    `  <div><pre>`;
+                }
+            }
+            
+            if ((p.jetton0Minter) && (p.jetton1Minter))
+            {
+                result +=
 `<div class="jsoncode">` +
 `{
     "address": "${poolContract.address}",
@@ -956,6 +1050,9 @@ export class AMMOrders {
 }` +
 `</div>` + 
             `</pre></div>`
+            }
+
+            return result;
 
         } catch (e) {
         }
