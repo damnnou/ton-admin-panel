@@ -1,22 +1,38 @@
-import { AccountState, AccountStorage, Address, Cell, Contract, ContractGetMethodResult, ContractProvider, ContractState, loadShardAccount, OpenedContract, Sender, SendMode,Transaction, TupleItem } from "@ton/core";
-import {TonClient, TonClient4} from "@ton/ton";
-import {getHttpV4Endpoint } from "@orbs-network/ton-access";
-                
+import { GetAddressInfoResponse } from "./types";
+import {
+    AccountState,
+    AccountStorage,
+    Address,
+    Cell,
+    Contract,
+    ContractGetMethodResult,
+    ContractProvider,
+    ContractState,
+    loadShardAccount,
+    OpenedContract,
+    Sender,
+    SendMode,
+    Transaction,
+    TupleItem,
+} from "@ton/core";
+import { TonClient, TonClient4 } from "@ton/ton";
+import { getHttpEndpoint, getHttpV4Endpoint } from "@orbs-network/ton-access";
+
 //const API_KEY = 'f200a6fdba67f4cd27bf0c69c28165305516fd503930a0c82456f9f763eeb773'
-const API_KEY = 'd843619b379084d133f061606beecbf72ae2bf60e0622e808f2a3f631673599b';
+const API_KEY = "d843619b379084d133f061606beecbf72ae2bf60e0622e808f2a3f631673599b";
 
 export const sendToIndex = async (method: string, params: any, isTestnet: boolean) => {
-    const mainnetRpc = 'https://toncenter.com/api/v3/';
-    const testnetRpc = 'https://testnet.toncenter.com/api/v3/';
+    const mainnetRpc = "https://toncenter.com/api/v3/";
+    const testnetRpc = "https://testnet.toncenter.com/api/v3/";
     const rpc = isTestnet ? testnetRpc : mainnetRpc;
 
     const headers = {
-        'Content-Type': 'application/json',
-        'X-API-Key': API_KEY
+        "Content-Type": "application/json",
+        "X-API-Key": API_KEY,
     };
 
-    const response = await fetch(rpc + method + '?' + new URLSearchParams(params), {
-        method: 'GET',
+    const response = await fetch(rpc + method + "?" + new URLSearchParams(params), {
+        method: "GET",
         headers: headers,
     });
     const json = await response.json();
@@ -24,26 +40,24 @@ export const sendToIndex = async (method: string, params: any, isTestnet: boolea
         throw new Error(json.error);
     }
     return json;
-}
+};
 
-const TONCO_TON_CONSOLE_KEY=`AGHD4DYGGAWBDZAAAAAPYUMY4V22MOI74LDT4VIF47EBFARRYYABMNGJMDGF6QJI2JATNKA`
-const DEFAULT_TON_CONSOLE_KEY=`AHIQH4F4Y4XR6UIAAAAOGYUHWOWLUS6ZIPEXSCLAPOMMD6FSNMPUKHCIJHIP52YTU4VKURA`
-
+const TONCO_TON_CONSOLE_KEY = `AGHD4DYGGAWBDZAAAAAPYUMY4V22MOI74LDT4VIF47EBFARRYYABMNGJMDGF6QJI2JATNKA`;
+const DEFAULT_TON_CONSOLE_KEY = `AHIQH4F4Y4XR6UIAAAAOGYUHWOWLUS6ZIPEXSCLAPOMMD6FSNMPUKHCIJHIP52YTU4VKURA`;
 
 export const sendToTonApi = async (method: string, params: any, isTestnet: boolean) => {
-
-    const mainnetRpc = 'https://tonapi.io/v2/';
-    const testnetRpc = 'https://testnet.tonapi.io/v2/';
+    const mainnetRpc = "https://tonapi.io/v2/";
+    const testnetRpc = "https://testnet.tonapi.io/v2/";
     const rpc = isTestnet ? testnetRpc : mainnetRpc;
 
     const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${DEFAULT_TON_CONSOLE_KEY}`
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${DEFAULT_TON_CONSOLE_KEY}`,
         //'Authorization': `Bearer AGHD4DYGGAWBDZAAAAAPYUMY4V22MOI74LDT4VIF47EBFARRYYABMNGJMDGF6QJI2JATNKA`
     };
 
-    const response = await fetch(rpc + method + '?' + new URLSearchParams(params), {
-        method: 'GET',
+    const response = await fetch(rpc + method + "?" + new URLSearchParams(params), {
+        method: "GET",
         headers: headers,
     });
     const json = await response.json();
@@ -51,42 +65,98 @@ export const sendToTonApi = async (method: string, params: any, isTestnet: boole
         throw new Error(json.error);
     }
     return json;
-}
+};
 
+const sendToTonCenter = async (endpoint: string, isTestnet: boolean, params?: Record<string, any>) => {
+    const TON_CENTER_API = "https://toncenter.com/api/v3";
+    const TON_CENTER_TESTNET_API = "https://testnet.toncenter.com/api/v3";
 
-export async function getAccountState(contractAddress: Address, isTestnet : boolean) : Promise<AccountStorage>
-{
-    let endpoint = await getHttpV4Endpoint({ network: isTestnet ? "testnet" : "mainnet"})
-    let client =  new TonClient4({ endpoint })
-    
+    const queryString = params ? `?${new URLSearchParams(params).toString()}` : "";
+
+    const rpc = isTestnet ? TON_CENTER_TESTNET_API : TON_CENTER_API;
+
+    const response = await fetch(`${rpc}${endpoint}${queryString}`, {
+        headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": API_KEY || "",
+        },
+    });
+
+    if (!response.ok) {
+        throw new Error(`TON Center Error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data;
+};
+
+// can't unpack Account state (500 Internal Server Error)
+export async function getAccountStateTonClient(contractAddress: Address, isTestnet: boolean): Promise<AccountStorage> {
+    let endpoint = await getHttpV4Endpoint({ network: isTestnet ? "testnet" : "mainnet" });
+    let client = new TonClient4({ endpoint });
+
     let bseqno = (await client.getLastBlock()).last.seqno;
-    let state = await client.getAccount(bseqno, contractAddress );
+    let state = await client.getAccount(bseqno, contractAddress);
 
-    let result : AccountState 
+    let result: AccountState;
     if (state.account.state.type == "uninit") {
-        result = { type : "uninit" }
+        result = { type: "uninit" };
     }
     if (state.account.state.type == "frozen") {
-        result = { 
-            type : "frozen", 
-            stateHash : BigInt(state.account.state.stateHash) 
-        }
+        result = {
+            type: "frozen",
+            stateHash: BigInt(state.account.state.stateHash),
+        };
     }
     if (state.account.state.type == "active") {
         result = {
-            type : "active",
-            state : {
-                code : Cell.fromBase64(state.account.state.code),
-                data : Cell.fromBase64(state.account.state.data)                
-            }
-        }        
+            type: "active",
+            state: {
+                code: Cell.fromBase64(state.account.state.code),
+                data: Cell.fromBase64(state.account.state.data),
+            },
+        };
     }
 
     return {
-        lastTransLt : BigInt(state.account.last.lt),
-        balance : {coins : BigInt(state.account.balance.coins)},
-        state : result
+        lastTransLt: BigInt(state.account.last.lt),
+        balance: { coins: BigInt(state.account.balance.coins) },
+        state: result,
+    };
+}
+
+export async function getAccountState(contractAddress: Address, isTestnet: boolean): Promise<AccountStorage> {
+    const { status, balance, code, data, last_transaction_hash, last_transaction_lt }: GetAddressInfoResponse = await sendToTonCenter(
+        "/account",
+        isTestnet,
+        { address: contractAddress.toString() }
+    );
+
+    let result: AccountState;
+    if (status === "unint") {
+        result = { type: "uninit" };
     }
+    if (status === "frozen") {
+        result = {
+            type: "frozen",
+            stateHash: BigInt(last_transaction_hash),
+        };
+    }
+    if (status === "active") {
+        result = {
+            type: "active",
+            state: {
+                code: Cell.fromBase64(code),
+                data: Cell.fromBase64(data),
+            },
+        };
+    }
+
+    return {
+        lastTransLt: BigInt(last_transaction_lt),
+        balance: { coins: BigInt(balance) },
+        state: result,
+    };
 }
 
 export class MyNetworkProvider implements ContractProvider {
@@ -98,8 +168,8 @@ export class MyNetworkProvider implements ContractProvider {
         this.contractAddress = contractAddress;
         this.isTestnet = isTestnet;
         this.tonClient = new TonClient({
-            endpoint: isTestnet ? 'https://testnet.toncenter.com/api/v2/jsonRPC' : 'https://toncenter.com/api/v2/jsonRPC',
-            apiKey: API_KEY
+            endpoint: isTestnet ? "https://testnet.toncenter.com/api/v2/jsonRPC" : "https://toncenter.com/api/v2/jsonRPC",
+            apiKey: API_KEY,
         });
     }
 
@@ -115,12 +185,15 @@ export class MyNetworkProvider implements ContractProvider {
         throw new Error("Method not implemented.");
     }
 
-    internal(via: Sender, args: {
-        value: string | bigint;
-        bounce?: boolean;
-        sendMode?: SendMode;
-        body?: string | Cell;
-    }): Promise<void> {
+    internal(
+        via: Sender,
+        args: {
+            value: string | bigint;
+            bounce?: boolean;
+            sendMode?: SendMode;
+            body?: string | Cell;
+        }
+    ): Promise<void> {
         throw new Error("Method not implemented.");
     }
 
@@ -131,5 +204,4 @@ export class MyNetworkProvider implements ContractProvider {
     getTransactions(address: Address, lt: bigint, hash: Buffer, limit?: number): Promise<Transaction[]> {
         throw new Error("Method not implemented.");
     }
-
 }
